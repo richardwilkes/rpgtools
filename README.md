@@ -11,3 +11,7 @@ for roleplaying games, which is what is was developed for.
 
 ## dice
 Rolls dice for standard dice notation used in roleplaying games.
+
+## names
+A very simple name generator based on the 2000 US Census data and the Social
+Security Administration's baby name data.
