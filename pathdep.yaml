@@ -3,10 +3,10 @@ dependencies:
 - import: github.com/davecgh/go-spew
   commit: ecdeabc65495df2dec95d7c4a4c3e021903035e5
 - import: github.com/dustin/go-humanize
-  commit: 77ed807830b4df581417e7f89eb81d4872832b72
+  commit: bb3d318650d48840a39aa21a027c6630e198e626
 - import: github.com/pmezard/go-difflib
   tag: v1.0.0
 - import: github.com/richardwilkes/toolbox
-  commit: c9ec1b79a188be62b77095c4a61750f7c48d5ec5
+  commit: 43e9162acfba7d461587c0d7160304232639af08
 - import: github.com/stretchr/testify
-  commit: 890a5c3458b43e6104ff5da8dfa139d013d77544
+  commit: 87b1dfb5b2fa649f52695dd9eae19abe404a4308
