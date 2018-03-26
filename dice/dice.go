@@ -4,10 +4,8 @@ package dice
 import (
 	"bytes"
 	"math"
-	"math/rand"
 	"regexp"
 	"strconv"
-	"time"
 )
 
 const (
@@ -16,23 +14,13 @@ const (
 )
 
 var (
-	// GURPS determines whether GURPS dice formatting should be used. A value
-	// of true means the die count is always shown and the sides value is
-	// suppressed if it is a '6', while a value of false means the die count
-	// is suppressed if it is a '1' and the sides value is always shown. By
-	// default, this is set to false.
-	GURPS bool
-	// ExtraDiceFromModifiers determines if modifiers greater than or equal to
-	// the average result of the base die should be converted to extra dice.
-	// For example, 1d6+8 will become 3d6+1. By default, this is set to false.
-	ExtraDiceFromModifiers bool
-	diceRegex              = regexp.MustCompile(diceRegexStr)
-	diceRegexOnly          = regexp.MustCompile(`^\s*` + diceRegexStr + `\s*$`)
+	diceRegex     = regexp.MustCompile(diceRegexStr)
+	diceRegexOnly = regexp.MustCompile(`^\s*` + diceRegexStr + `\s*$`)
 )
 
 // Dice holds the dice information.
 type Dice struct {
-	Randomizer *rand.Rand
+	Config     *Config
 	Count      int
 	Sides      int
 	Modifier   int
@@ -40,14 +28,21 @@ type Dice struct {
 }
 
 // Roll the dice. The spec will be used to create a new Dice object and the
-// result of a single roll will be returned.
-func Roll(spec string) int {
-	return New(spec).Roll()
+// result of a single roll will be returned. May pass nil for cfg to get a
+// default configuration.
+func Roll(cfg *Config, spec string) int {
+	return New(cfg, spec).Roll()
 }
 
-// New creates a new Dice based on the given spec.
-func New(spec string) *Dice {
-	var dice Dice
+// New creates a new Dice based on the given configuration and spec. May pass
+// nil for cfg to get a default configuration.
+func New(cfg *Config, spec string) *Dice {
+	if cfg == nil {
+		cfg = &Config{Randomizer: NewCryptoRand()}
+	} else if cfg.Randomizer == nil {
+		panic("cfg.Randomizer must be specified")
+	}
+	dice := &Dice{Config: cfg}
 	match := diceRegexOnly.FindStringSubmatch(spec)
 	if match != nil {
 		if match[2] != "" {
@@ -61,7 +56,7 @@ func New(spec string) *Dice {
 		dice.Multiplier = atoi(match[10])
 	}
 	dice.Normalize()
-	return &dice
+	return dice
 }
 
 func atoi(text string) int {
@@ -73,22 +68,22 @@ func atoi(text string) int {
 
 // Roll returns the result of rolling the dice.
 func (dice *Dice) Roll() int {
-	count, result := dice.adjustedCountAndModifier(ExtraDiceFromModifiers)
+	count, result := dice.adjustedCountAndModifier(dice.Config.ExtraDiceFromModifiers)
 	for i := 0; i < count; i++ {
-		result += 1 + dice.Randomizer.Intn(dice.Sides)
+		result += 1 + dice.Config.Randomizer.Intn(dice.Sides)
 	}
 	return result * dice.Multiplier
 }
 
 func (dice *Dice) String() string {
-	count, modifier := dice.adjustedCountAndModifier(ExtraDiceFromModifiers)
+	count, modifier := dice.adjustedCountAndModifier(dice.Config.ExtraDiceFromModifiers)
 	var buffer bytes.Buffer
 	if count > 0 {
-		if GURPS || count > 1 {
+		if dice.Config.GURPSFormat || count > 1 {
 			buffer.WriteString(strconv.Itoa(count))
 		}
 		buffer.WriteString("d")
-		if !GURPS || dice.Sides != defaultSides {
+		if !dice.Config.GURPSFormat || dice.Sides != defaultSides {
 			buffer.WriteString(strconv.Itoa(dice.Sides))
 		}
 	}
@@ -109,7 +104,7 @@ func (dice *Dice) String() string {
 }
 
 // ApplyExtraDiceFromModifiers alters the Dice to reflect any adjustment that
-// would be made if the ExtraDiceFromModifiers flag was enabled.
+// would be made if the ExtraDiceFromModifiers configuration flag was enabled.
 func (dice *Dice) ApplyExtraDiceFromModifiers() {
 	dice.Count, dice.Modifier = dice.adjustedCountAndModifier(true)
 }
@@ -154,9 +149,6 @@ func (dice *Dice) Normalize() {
 	}
 	if dice.Multiplier < 1 {
 		dice.Multiplier = 1
-	}
-	if dice.Randomizer == nil {
-		dice.Randomizer = rand.New(rand.NewSource(time.Now().UnixNano()))
 	}
 }
 

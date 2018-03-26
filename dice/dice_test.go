@@ -44,9 +44,11 @@ func TestCreation(t *testing.T) {
 		{"1d6+8", "3d6+1", 1, 6, 8, 1, false, true},       // 22
 	} {
 		desc := fmt.Sprintf("Table index %d: %s", i, one.Text)
-		dice.GURPS = one.GURPS
-		dice.ExtraDiceFromModifiers = one.ExtraDiceFromModifiers
-		d := dice.New(one.Text)
+		d := dice.New(&dice.Config{
+			Randomizer:             dice.NewCryptoRand(),
+			GURPSFormat:            one.GURPS,
+			ExtraDiceFromModifiers: one.ExtraDiceFromModifiers,
+		}, one.Text)
 		assert.Equal(t, one.Expected, d.String(), desc)
 		assert.Equal(t, one.Count, d.Count, desc)
 		assert.Equal(t, one.Sides, d.Sides, desc)
@@ -56,8 +58,7 @@ func TestCreation(t *testing.T) {
 }
 
 func TestApplyExtraDiceFromModifiersAfter(t *testing.T) {
-	dice.GURPS = false
-	dice.ExtraDiceFromModifiers = false
+	cfg := &dice.Config{Randomizer: dice.NewCryptoRand()}
 	for i, one := range []struct {
 		Text     string
 		Expected string
@@ -71,7 +72,7 @@ func TestApplyExtraDiceFromModifiersAfter(t *testing.T) {
 		{"d6+8", "3d6+1", 3, 1}, // 4
 	} {
 		desc := fmt.Sprintf("Table index %d: %s", i, one.Text)
-		d := dice.New(one.Text)
+		d := dice.New(cfg, one.Text)
 		d.ApplyExtraDiceFromModifiers()
 		assert.Equal(t, one.Expected, d.String(), desc)
 		assert.Equal(t, one.Count, d.Count, desc)
