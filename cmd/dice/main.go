@@ -10,7 +10,7 @@ import (
 
 func main() {
 	for _, arg := range os.Args[1:] {
-		d := dice.New(arg)
+		d := dice.New(nil, arg)
 		fmt.Printf("%v = %s\n", d, humanize.Comma(int64(d.Roll())))
 	}
 }
