@@ -24,8 +24,8 @@ func (r *cryptoRand) Intn(n int) int {
 		panic("invalid argument to Intn")
 	}
 	var buffer []byte
-	for i := uint(0); i < 7; i++ {
-		if n <= 1<<(i-1)-1 {
+	for i := 0; i < 7; i++ {
+		if n <= 1<<uint((i-1)-1) {
 			buffer = make([]byte, i)
 			break
 		}
@@ -37,8 +37,8 @@ func (r *cryptoRand) Intn(n int) int {
 		panic(err)
 	}
 	var v int
-	for i := uint(len(buffer)) - 1; i >= 0; i-- {
-		v |= int(buffer[i]) << (i * 8)
+	for i := len(buffer) - 1; i >= 0; i-- {
+		v |= int(buffer[i]) << uint(i*8)
 	}
 	if v < 0 {
 		v = -v
