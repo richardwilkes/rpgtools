@@ -11,9 +11,11 @@ type Randomizer interface {
 	Intn(n int) int
 }
 
+var cryptoRandInstance = &cryptoRand{}
+
 // NewCryptoRand returns a Randomizer based on the crypto/rand package.
 func NewCryptoRand() Randomizer {
-	return &cryptoRand{}
+	return cryptoRandInstance
 }
 
 type cryptoRand struct {
