@@ -66,6 +66,27 @@ func atoi(text string) int {
 	return 0
 }
 
+// Minimum returns the minimum result.
+func (dice *Dice) Minimum() int {
+	count, result := dice.adjustedCountAndModifier(dice.Config.ExtraDiceFromModifiers)
+	result += count
+	return result * dice.Multiplier
+}
+
+// Average returns the average result.
+func (dice *Dice) Average() int {
+	count, result := dice.adjustedCountAndModifier(dice.Config.ExtraDiceFromModifiers)
+	result += count * (dice.Sides + 1) / 2
+	return result * dice.Multiplier
+}
+
+// Maximum returns the maximum result.
+func (dice *Dice) Maximum() int {
+	count, result := dice.adjustedCountAndModifier(dice.Config.ExtraDiceFromModifiers)
+	result += count * (dice.Sides + 1)
+	return result * dice.Multiplier
+}
+
 // Roll returns the result of rolling the dice.
 func (dice *Dice) Roll() int {
 	count, result := dice.adjustedCountAndModifier(dice.Config.ExtraDiceFromModifiers)
