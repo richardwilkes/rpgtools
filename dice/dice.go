@@ -14,6 +14,9 @@ const (
 )
 
 var (
+	// DefaultConfig is used if nil is passed in for a configuration. It is
+	// also used when unmarshaling.
+	DefaultConfig = &Config{Randomizer: NewCryptoRand()}
 	diceRegex     = regexp.MustCompile(diceRegexStr)
 	diceRegexOnly = regexp.MustCompile(`^\s*` + diceRegexStr + `\s*$`)
 )
@@ -38,7 +41,7 @@ func Roll(cfg *Config, spec string) int {
 // nil for cfg to get a default configuration.
 func New(cfg *Config, spec string) *Dice {
 	if cfg == nil {
-		cfg = &Config{Randomizer: NewCryptoRand()}
+		cfg = DefaultConfig
 	} else if cfg.Randomizer == nil {
 		panic("cfg.Randomizer must be specified")
 	}
@@ -171,6 +174,17 @@ func (dice *Dice) Normalize() {
 	if dice.Multiplier < 1 {
 		dice.Multiplier = 1
 	}
+}
+
+// MarshalText implements the encoding.TextMarshaler interface.
+func (dice Dice) MarshalText() (text []byte, err error) {
+	return []byte(dice.String()), nil
+}
+
+// UnmarshalText implements the encoding.TextUnmarshaler interface.
+func (dice *Dice) UnmarshalText(text []byte) error {
+	*dice = *New(nil, string(text))
+	return nil
 }
 
 // IsEquivalent returns true if this Dice is equivalent to another Dice.
