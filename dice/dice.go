@@ -86,7 +86,7 @@ func (dice *Dice) Average() int {
 // Maximum returns the maximum result.
 func (dice *Dice) Maximum() int {
 	count, result := dice.adjustedCountAndModifier(dice.Config.ExtraDiceFromModifiers)
-	result += count * (dice.Sides + 1)
+	result += count * dice.Sides
 	return result * dice.Multiplier
 }
 
