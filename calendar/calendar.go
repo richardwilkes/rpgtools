@@ -44,8 +44,8 @@ func (cal *Calendar) Valid() error {
 			return err
 		}
 	}
-	for _, season := range cal.Seasons {
-		if err := season.Valid(cal); err != nil {
+	for i := range cal.Seasons {
+		if err := cal.Seasons[i].Valid(cal); err != nil {
 			return err
 		}
 	}

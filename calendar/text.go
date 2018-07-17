@@ -68,8 +68,8 @@ func WriteMonthBlock(date Date, w io.Writer) {
 // WriteSeasonsBlock writes a text representation of the seasons.
 func WriteSeasonsBlock(w io.Writer) {
 	fmt.Fprintln(w, "Seasons:")
-	for _, season := range Current.Seasons {
-		fmt.Fprintf(w, "  %v\n", &season)
+	for i := range Current.Seasons {
+		fmt.Fprintf(w, "  %v\n", &Current.Seasons[i])
 	}
 }
 
