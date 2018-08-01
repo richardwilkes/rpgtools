@@ -6,6 +6,8 @@ import (
 	"math"
 	"regexp"
 	"strconv"
+
+	"github.com/richardwilkes/toolbox/xmath/rand"
 )
 
 const (
@@ -16,7 +18,7 @@ const (
 var (
 	// DefaultConfig is used if nil is passed in for a configuration. It is
 	// also used when unmarshaling.
-	DefaultConfig = &Config{Randomizer: NewCryptoRand()}
+	DefaultConfig = &Config{Randomizer: rand.NewCryptoRand()}
 	diceRegex     = regexp.MustCompile(diceRegexStr)
 	diceRegexOnly = regexp.MustCompile(`^\s*` + diceRegexStr + `\s*$`)
 )

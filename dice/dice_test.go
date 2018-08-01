@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/richardwilkes/rpgtools/dice"
+	"github.com/richardwilkes/toolbox/xmath/rand"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -45,7 +46,7 @@ func TestCreation(t *testing.T) {
 	} {
 		desc := fmt.Sprintf("Table index %d: %s", i, one.Text)
 		d := dice.New(&dice.Config{
-			Randomizer:             dice.NewCryptoRand(),
+			Randomizer:             rand.NewCryptoRand(),
 			GURPSFormat:            one.GURPS,
 			ExtraDiceFromModifiers: one.ExtraDiceFromModifiers,
 		}, one.Text)
@@ -58,7 +59,7 @@ func TestCreation(t *testing.T) {
 }
 
 func TestApplyExtraDiceFromModifiersAfter(t *testing.T) {
-	cfg := &dice.Config{Randomizer: dice.NewCryptoRand()}
+	cfg := &dice.Config{Randomizer: rand.NewCryptoRand()}
 	for i, one := range []struct {
 		Text     string
 		Expected string

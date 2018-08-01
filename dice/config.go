@@ -1,9 +1,11 @@
 package dice
 
+import "github.com/richardwilkes/toolbox/xmath/rand"
+
 // Config holds a configuration for Dice.
 type Config struct {
 	// Randomizer holds the randomizer that will be used.
-	Randomizer Randomizer
+	Randomizer rand.Randomizer
 	// GURPSFormat determines whether GURPS dice formatting should be used. A
 	// value of true means the die count is always shown and the sides value
 	// is suppressed if it is a '6', while a value of false means the die
@@ -18,7 +20,7 @@ type Config struct {
 // DefaultGURPSConfig creates a Dice config suited for GURPS.
 func DefaultGURPSConfig() *Config {
 	return &Config{
-		Randomizer:  NewCryptoRand(),
+		Randomizer:  rand.NewCryptoRand(),
 		GURPSFormat: true,
 	}
 }
