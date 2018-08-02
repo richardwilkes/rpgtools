@@ -48,7 +48,7 @@ type Generator struct {
 
 // NewFromData creates a new random name generator from configuration data.
 func NewFromData(data *GeneratorData) *Generator {
-	// Manually copy the data over, to ensure to shared pointers are retained
+	// Manually copy the data over, to ensure no shared pointers are retained
 	g := &Generator{
 		Randomizer: rand.NewCryptoRand(),
 		GeneratorData: GeneratorData{
