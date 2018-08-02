@@ -3,10 +3,12 @@ package codegen
 import (
 	"bytes"
 	"go/format"
+	"sort"
 	"text/template"
 
 	"github.com/richardwilkes/rpgtools/names"
 	"github.com/richardwilkes/toolbox/errs"
+	"github.com/richardwilkes/toolbox/txt"
 )
 
 type info struct {
@@ -17,6 +19,11 @@ type info struct {
 
 // CreateGoCode creates Go code for the provided names.GeneratorData.
 func CreateGoCode(pkg, varName string, data *names.GeneratorData) (string, error) {
+	for i := range data.Segments {
+		sort.Slice(data.Segments[i], func(j, k int) bool {
+			return txt.NaturalLess(data.Segments[i][j].Value, data.Segments[i][k].Value, false)
+		})
+	}
 	var buffer bytes.Buffer
 	t, err := template.New("").Parse(tmpl)
 	if err != nil {

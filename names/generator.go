@@ -1,9 +1,11 @@
 package names
 
 import (
+	"sort"
 	"strings"
 	"unicode/utf8"
 
+	"github.com/richardwilkes/toolbox/txt"
 	"github.com/richardwilkes/toolbox/xmath/rand"
 )
 
@@ -116,6 +118,11 @@ func NewFromSamples(samples []string, vowelChecker VowelChecker) *Generator {
 			g.CountFreq[segCount-1]++
 			g.CountTotalFreq++
 		}
+	}
+	for i := range g.Segments {
+		sort.Slice(g.Segments[i], func(j, k int) bool {
+			return txt.NaturalLess(g.Segments[i][j].Value, g.Segments[i][k].Value, false)
+		})
 	}
 	return g
 }
