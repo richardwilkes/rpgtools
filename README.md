@@ -13,5 +13,7 @@ for roleplaying games, which is what is was developed for.
 Rolls dice for standard dice notation used in roleplaying games.
 
 ## names
-A very simple name generator based on the 2000 US Census data and the Social
-Security Administration's baby name data.
+A random name generator. The **namer** sub-package provides generators for
+male, female, and last names based on the 2000 US Census data and the
+Social Security Administration's baby name data. The **codegen** sub-package
+allows you to generate code for new generators.
