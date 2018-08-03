@@ -4,7 +4,7 @@ import "github.com/richardwilkes/rpgtools/names"
 
 // Last is a random name generator for last names. Created from data obtained
 // from https://www.census.gov/genealogy/www/data/2000surnames/names.zip
-var Last = names.NewFromData(&names.GeneratorData{
+var Last = (&names.Data{
 	StartsWithVowelFreq:     16021,
 	StartsWithConsonantFreq: 146233,
 	CountFreq:               []int{0, 1997, 15176, 28607, 58846, 26893, 20004, 6983, 2573, 585, 459, 93, 38},
@@ -1615,4 +1615,4 @@ var Last = names.NewFromData(&names.GeneratorData{
 			{Value: "zr", Freq: 5},
 		},
 	},
-})
+}).Generator()

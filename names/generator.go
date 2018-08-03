@@ -9,85 +9,30 @@ import (
 	"github.com/richardwilkes/toolbox/xmath/rand"
 )
 
-// Constants for naming the segment array indexes.
-const (
-	Initial = iota
-	Interior
-	Ending
-	InitialVowel      = Initial
-	InteriorVowel     = InitialVowel + Interior
-	EndingVowel       = InitialVowel + Ending
-	InitialConsonant  = EndingVowel + 1
-	InteriorConsonant = InitialConsonant + Interior
-	EndingConsonant   = InitialConsonant + Ending
-	VowelToConsonant  = InitialConsonant - InitialVowel
-	ArraySize         = EndingConsonant + 1
-)
-
-// Segment holds string segment and its frequency of occurrence.
-type Segment struct {
-	Value string `json:"value" yaml:"value"`
-	Freq  int    `json:"freq" yaml:"freq"`
-}
-
-// GeneratorData holds the data necessary to create a random name generator.
-// If persistence is desired, this is the data that should be recorded. The
-// codegen package can turn this into Go code.
-type GeneratorData struct {
-	StartsWithVowelFreq     int                  `json:"starts_with_vowel_freq" yaml:"starts_with_vowel_freq"`
-	StartsWithConsonantFreq int                  `json:"starts_with_consonant_freq" yaml:"starts_with_consonant_freq"`
-	CountFreq               []int                `json:"count_freq" yaml:"count_freq"`
-	Segments                [ArraySize][]Segment `json:"segments" yaml:"segments"`
-}
-
 // Generator provides a random name generator.
 type Generator struct {
-	Randomizer        rand.Randomizer
-	CountTotalFreq    int
-	SegmentsTotalFreq [ArraySize]int
-	GeneratorData
-}
-
-// NewFromData creates a new random name generator from configuration data.
-func NewFromData(data *GeneratorData) *Generator {
-	// Manually copy the data over, to ensure no shared pointers are retained
-	g := &Generator{
-		Randomizer: rand.NewCryptoRand(),
-		GeneratorData: GeneratorData{
-			StartsWithVowelFreq:     data.StartsWithVowelFreq,
-			StartsWithConsonantFreq: data.StartsWithConsonantFreq,
-			CountFreq:               make([]int, len(data.CountFreq)),
-		},
-	}
-	copy(g.CountFreq, data.CountFreq)
-	for _, one := range data.CountFreq {
-		g.CountTotalFreq += one
-	}
-	for i, seg := range data.Segments {
-		g.Segments[i] = make([]Segment, len(seg))
-		copy(g.Segments[i], seg)
-		for j := range seg {
-			g.SegmentsTotalFreq[i] += seg[j].Freq
-		}
-	}
-	return g
+	data              *Data
+	countTotalFreq    int
+	segmentsTotalFreq [ArraySize]int
 }
 
 // NewFromSamples uses the provided sample names to produce a new random name
 // generator. Each sample should be a single word. 'vowelChecker' may be nil,
-// in which case IsVowely() will be used.
-func NewFromSamples(samples []string, vowelChecker VowelChecker) *Generator {
+// in which case IsVowely() will be used. After processing all of the samples,
+// any segments that don't meet the 'minimumFrequency' parameter will be
+// pruned.
+func NewFromSamples(samples []string, minimumFrequency int, vowelChecker VowelChecker) *Generator {
 	if vowelChecker == nil {
 		vowelChecker = IsVowely
 	}
-	g := &Generator{Randomizer: rand.NewCryptoRand()}
+	g := &Generator{data: &Data{}}
 	for _, name := range samples {
+		name = strings.TrimSpace(strings.ToLower(name))
 		if name != "" {
 			var segment string
 			var last rune
-			var index int
-			var count int
-			for _, ch := range strings.ToLower(name) {
+			var index, count int
+			for _, ch := range name {
 				if segment != "" {
 					if vowelChecker(ch) != vowelChecker(last) {
 						g.process(index, segment, vowelChecker)
@@ -110,19 +55,29 @@ func NewFromSamples(samples []string, vowelChecker VowelChecker) *Generator {
 			if segCount < 2 {
 				segCount = 2 // Force a minimum of 2 segments
 			}
-			if len(g.CountFreq) < segCount {
+			if len(g.data.CountFreq) < segCount {
 				countFreq := make([]int, segCount)
-				copy(countFreq, g.CountFreq)
-				g.CountFreq = countFreq
+				copy(countFreq, g.data.CountFreq)
+				g.data.CountFreq = countFreq
 			}
-			g.CountFreq[segCount-1]++
-			g.CountTotalFreq++
+			g.data.CountFreq[segCount-1]++
+			g.countTotalFreq++
 		}
 	}
-	for i := range g.Segments {
-		sort.Slice(g.Segments[i], func(j, k int) bool {
-			return txt.NaturalLess(g.Segments[i][j].Value, g.Segments[i][k].Value, false)
+	for i := range g.data.Segments {
+		segments := make([]Segment, 0, len(g.data.Segments[i]))
+		for j := range g.data.Segments[i] {
+			if g.data.Segments[i][j].Freq >= minimumFrequency {
+				segments = append(segments, g.data.Segments[i][j])
+			} else {
+				g.segmentsTotalFreq[i] -= g.data.Segments[i][j].Freq
+			}
+		}
+		sort.Slice(segments, func(j, k int) bool {
+			return txt.NaturalLess(segments[j].Value, segments[k].Value, false)
 		})
+		g.data.Segments[i] = make([]Segment, len(segments))
+		copy(g.data.Segments[i], segments)
 	}
 	return g
 }
@@ -134,56 +89,44 @@ func (g *Generator) process(index int, segment string, vowelChecker VowelChecker
 	}
 	if vowelChecker(r) {
 		if index == InitialVowel {
-			g.StartsWithVowelFreq++
+			g.data.StartsWithVowelFreq++
 		}
 	} else {
 		index += VowelToConsonant
 		if index == InitialConsonant {
-			g.StartsWithConsonantFreq++
+			g.data.StartsWithConsonantFreq++
 		}
 	}
-	g.SegmentsTotalFreq[index]++
-	for i := range g.Segments[index] {
-		if g.Segments[index][i].Value == segment {
-			g.Segments[index][i].Freq++
+	g.segmentsTotalFreq[index]++
+	for i := range g.data.Segments[index] {
+		if g.data.Segments[index][i].Value == segment {
+			g.data.Segments[index][i].Freq++
 			return
 		}
 	}
-	g.Segments[index] = append(g.Segments[index], Segment{
+	g.data.Segments[index] = append(g.data.Segments[index], Segment{
 		Value: segment,
 		Freq:  1,
 	})
 }
 
-// Prune edits the generator data to remove any segments that have a frequency
-// less than the specified value.
-func (g *Generator) Prune(minimumFrequency int) {
-	for i := range g.Segments {
-		segments := make([]Segment, 0, len(g.Segments[i]))
-		for j := range g.Segments[i] {
-			if g.Segments[i][j].Freq >= minimumFrequency {
-				segments = append(segments, g.Segments[i][j])
-			} else {
-				g.SegmentsTotalFreq[i] -= g.Segments[i][j].Freq
-			}
-		}
-		g.Segments[i] = make([]Segment, len(segments))
-		copy(g.Segments[i], segments)
-	}
-}
-
 // Generate a new random name.
 func (g *Generator) Generate() string {
-	r := g.Randomizer.Intn(g.CountTotalFreq)
+	return g.GenerateWith(rand.NewCryptoRand())
+}
+
+// GenerateWith generates a new random name using the specified randomizer.
+func (g *Generator) GenerateWith(rnd rand.Randomizer) string {
+	r := rnd.Intn(g.countTotalFreq)
 	var index int
-	for i, freq := range g.CountFreq {
+	for i, freq := range g.data.CountFreq {
 		if r < freq {
 			index = i
 			break
 		}
 		r -= freq
 	}
-	useVowel := g.Randomizer.Intn(g.StartsWithVowelFreq+g.StartsWithConsonantFreq) < g.StartsWithVowelFreq
+	useVowel := rnd.Intn(g.data.StartsWithVowelFreq+g.data.StartsWithConsonantFreq) < g.data.StartsWithVowelFreq
 	var buffer strings.Builder
 	for i := 0; i <= index; i++ {
 		var which int
@@ -199,22 +142,15 @@ func (g *Generator) Generate() string {
 			which += VowelToConsonant
 		}
 		useVowel = !useVowel
-		total := g.SegmentsTotalFreq[which]
+		total := g.segmentsTotalFreq[which]
 		if total > 0 {
-			buffer.WriteString(PickSegmentValue(g.Randomizer, total, g.Segments[which]))
+			buffer.WriteString(PickSegmentValue(rnd, total, g.data.Segments[which]))
 		}
 	}
-	return strings.Title(buffer.String())
+	return txt.FirstLetterToUpper(buffer.String())
 }
 
-// PickSegmentValue picks a value from the segment slice.
-func PickSegmentValue(rnd rand.Randomizer, total int, segments []Segment) string {
-	r := rnd.Intn(total)
-	for i := range segments {
-		if r < segments[i].Freq {
-			return segments[i].Value
-		}
-		r -= segments[i].Freq
-	}
-	return segments[0].Value // Should never reach this line
+// CloneData returns a clone of the data being used for this generator.
+func (g *Generator) CloneData() *Data {
+	return g.data.Clone()
 }

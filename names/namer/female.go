@@ -4,7 +4,7 @@ import "github.com/richardwilkes/rpgtools/names"
 
 // Female is a random name generator for female first names. Created from data
 // obtained from http://www.ssa.gov/oact/babynames/names.zip
-var Female = names.NewFromData(&names.GeneratorData{
+var Female = (&names.Data{
 	StartsWithVowelFreq:     12795,
 	StartsWithConsonantFreq: 52863,
 	CountFreq:               []int{0, 1002, 3580, 18158, 15383, 21032, 4147, 1986, 187, 108, 44, 14, 17},
@@ -746,4 +746,4 @@ var Female = names.NewFromData(&names.GeneratorData{
 			{Value: "z", Freq: 179},
 		},
 	},
-})
+}).Generator()

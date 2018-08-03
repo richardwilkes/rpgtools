@@ -4,7 +4,7 @@ import "github.com/richardwilkes/rpgtools/names"
 
 // Male is a random name generator for male first names. Created from data
 // obtained from http://www.ssa.gov/oact/babynames/names.zip
-var Male = names.NewFromData(&names.GeneratorData{
+var Male = (&names.Data{
 	StartsWithVowelFreq:     7008,
 	StartsWithConsonantFreq: 32720,
 	CountFreq:               []int{0, 812, 3921, 8842, 17235, 4949, 2953, 616, 270, 71, 31, 10, 17, 1},
@@ -708,4 +708,4 @@ var Male = names.NewFromData(&names.GeneratorData{
 			{Value: "zz", Freq: 7},
 		},
 	},
-})
+}).Generator()
