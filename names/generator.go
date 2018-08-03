@@ -201,17 +201,20 @@ func (g *Generator) Generate() string {
 		useVowel = !useVowel
 		total := g.SegmentsTotalFreq[which]
 		if total > 0 {
-			var target int
-			r = g.Randomizer.Intn(total)
-			for j, one := range g.Segments[which] {
-				if r < one.Freq {
-					target = j
-					break
-				}
-				r -= one.Freq
-			}
-			buffer.WriteString(g.Segments[which][target].Value)
+			buffer.WriteString(PickSegmentValue(g.Randomizer, total, g.Segments[which]))
 		}
 	}
 	return strings.Title(buffer.String())
+}
+
+// PickSegmentValue picks a value from the segment slice.
+func PickSegmentValue(rnd rand.Randomizer, total int, segments []Segment) string {
+	r := rnd.Intn(total)
+	for i := range segments {
+		if r < segments[i].Freq {
+			return segments[i].Value
+		}
+		r -= segments[i].Freq
+	}
+	return segments[0].Value // Should never reach this line
 }
