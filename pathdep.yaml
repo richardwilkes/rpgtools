@@ -7,6 +7,6 @@ dependencies:
 - import: github.com/pmezard/go-difflib
   tag: v1.0.0
 - import: github.com/richardwilkes/toolbox
-  commit: 2c1fae520bc07566d568cf1a7e730cf900676b18
+  commit: d35d936b4a5580659e874fd0ce2543076bc7990c
 - import: github.com/stretchr/testify
   tag: v1.2.2

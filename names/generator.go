@@ -147,7 +147,7 @@ func (g *Generator) GenerateWith(rnd rand.Randomizer) string {
 			buffer.WriteString(PickSegmentValue(rnd, total, g.data.Segments[which]))
 		}
 	}
-	return txt.FirstLetterToUpper(buffer.String())
+	return txt.FirstToUpper(buffer.String())
 }
 
 // CloneData returns a clone of the data being used for this generator.
