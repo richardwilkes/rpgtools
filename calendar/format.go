@@ -36,8 +36,13 @@ func (date Date) Format(layout string) string {
 //   %n  Month padded with zeroes, e.g. '09'
 //   %D  Day, e.g. '2'
 //   %d  Day padded with zeroes, e.g. '02'
-//   %Y  Year, e.g. '2017' if positive, '2017 BC' if negative
-//   %y  Year with dating suffix, e.g. '2017 AD'
+//   %Y  Year, e.g. '2017' if positive, '2017 BC' if negative; however, if the
+//       dating suffixes aren't empty and match each other, then this will
+//       behave the same as %y
+//   %y  Year with dating suffix, e.g. '2017 AD'; however, if the dating
+//       suffixes are empty or they match each other, then negative years will
+//       result in '-2017 AD'
+//   %z  Year without dating suffix, e.g. '2017' or '-2017'
 //   %%  %
 func (date Date) WriteFormat(w io.Writer, layout string) {
 	cmd := false
@@ -64,15 +69,21 @@ func (date Date) WriteFormat(w io.Writer, layout string) {
 				fmt.Fprintf(w, "%0[1]*[2]d", widthNeeded(Current.Months[date.Month()].Days), date.DayInMonth())
 			case 'Y':
 				year := date.Year()
-				if year < 0 && Current.YearBeforeSuffix != "" {
-					fmt.Fprintf(w, "%d %s", -year, Current.YearBeforeSuffix)
+				if Current.YearBeforeSuffix != "" {
+					if Current.YearSuffix == Current.YearBeforeSuffix {
+						fmt.Fprintf(w, "%d %s", year, Current.YearBeforeSuffix)
+					} else if year < 0 {
+						fmt.Fprintf(w, "%d %s", -year, Current.YearBeforeSuffix)
+					} else {
+						fmt.Fprint(w, year)
+					}
 				} else {
 					fmt.Fprint(w, year)
 				}
 			case 'y':
 				suffix := date.Suffix()
 				year := date.Year()
-				if year < 0 && suffix != "" {
+				if year < 0 && suffix != "" && Current.YearSuffix != Current.YearBeforeSuffix {
 					year = -year
 				}
 				if suffix != "" {
@@ -80,6 +91,8 @@ func (date Date) WriteFormat(w io.Writer, layout string) {
 				} else {
 					fmt.Fprint(w, year)
 				}
+			case 'z':
+				fmt.Fprint(w, date.Year())
 			case '%':
 				fmt.Fprint(w, "%")
 			}
