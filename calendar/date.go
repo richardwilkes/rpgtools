@@ -1,7 +1,6 @@
 package calendar
 
 import (
-	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
@@ -159,45 +158,17 @@ func (date Date) WeekDayName() string {
 	return Current.WeekDays[date.WeekDay()]
 }
 
-// String returns a date in the format "9/22/2017".
-func (date Date) String() string {
-	return fmt.Sprintf("%d/%d/%d", date.Month(), date.DayInMonth(), date.Year())
+// Suffix returns the suffix for the year.
+func (date Date) Suffix() string {
+	if date.Year() < 0 {
+		return Current.YearBeforeSuffix
+	}
+	return Current.YearSuffix
 }
 
-// Format a date. If 'weekday' is true, the weekday name will be included. If
-// 'shortNames' is true, then month and weekday names will be truncated to a
-// maximum of 3 characters. If 'suffix' is true, the year suffix will be
-// included.
-//
-// Examples:
-//   .Format(false, false, false) -> "September 22, 2017"
-//   .Format(false, false, true)  -> "September 22, 2017 AD"
-//   .Format(false, true, false)  -> "Sep 22, 2017"
-//   .Format(false, true, true)   -> "Sep 22, 2017 AD"
-//   .Format(true, false, false)  -> "Friday, September 22, 2017"
-//   .Format(true, false, true)   -> "Friday, September 22, 2017 AD"
-//   .Format(true, true, false)   -> "Friday, Sep 22, 2017"
-//   .Format(true, true, true)    -> "Friday, Sep 22, 2017 AD"
-func (date Date) Format(weekday, shortNames, suffix bool) string {
-	var buffer strings.Builder
-	if weekday {
-		fmt.Fprintf(&buffer, "%s, ", Current.WeekDays[date.WeekDay()])
-	}
-	month := Current.Months[date.Month()-1].Name
-	if shortNames {
-		month = txt.FirstN(month, 3)
-	}
-	year := date.Year()
-	suf := Current.YearSuffix
-	if suffix && year < 0 && Current.YearBeforeSuffix != "" {
-		year = -year
-		suf = Current.YearBeforeSuffix
-	}
-	fmt.Fprintf(&buffer, "%s %d, %d", month, date.DayInMonth(), year)
-	if suffix && suf != "" {
-		fmt.Fprintf(&buffer, " %s", suf)
-	}
-	return buffer.String()
+// String returns a date in the ShortFormat.
+func (date Date) String() string {
+	return date.Format(ShortFormat)
 }
 
 // MarshalText implements the encoding.TextMarshaler interface.

@@ -65,23 +65,29 @@ func TestWeekDay(t *testing.T) {
 func TestDateToString(t *testing.T) {
 	assert.Equal(t, "1/1/2017", calendar.Date(736205).String())
 	assert.Equal(t, "9/22/2017", calendar.Date(736469).String())
-	assert.Equal(t, "12/31/-1", calendar.Date(364).String())
-	assert.Equal(t, "12/31/-2", calendar.Date(-1).String())
-	assert.Equal(t, "1/1/-1", calendar.Date(0).String())
+	assert.Equal(t, "12/31/1 BC", calendar.Date(364).String())
+	assert.Equal(t, "12/31/2 BC", calendar.Date(-1).String())
+	assert.Equal(t, "1/1/1 BC", calendar.Date(0).String())
 	assert.Equal(t, "1/1/1", calendar.Date(365).String())
 	assert.Equal(t, "1/1/1", calendar.Date(365).String())
 }
 
 func TestFormat(t *testing.T) {
 	d := calendar.MustNewDate(9, 22, 2017)
-	assert.Equal(t, "September 22, 2017", d.Format(false, false, false))
-	assert.Equal(t, "September 22, 2017 AD", d.Format(false, false, true))
-	assert.Equal(t, "Sep 22, 2017", d.Format(false, true, false))
-	assert.Equal(t, "Sep 22, 2017 AD", d.Format(false, true, true))
-	assert.Equal(t, "Friday, September 22, 2017", d.Format(true, false, false))
-	assert.Equal(t, "Friday, September 22, 2017 AD", d.Format(true, false, true))
-	assert.Equal(t, "Friday, Sep 22, 2017", d.Format(true, true, false))
-	assert.Equal(t, "Friday, Sep 22, 2017 AD", d.Format(true, true, true))
+	assert.Equal(t, "9/22/2017", d.Format(calendar.ShortFormat))
+	assert.Equal(t, "Sep 22, 2017", d.Format(calendar.MediumFormat))
+	assert.Equal(t, "September 22, 2017", d.Format(calendar.LongFormat))
+	assert.Equal(t, "Friday, September 22, 2017", d.Format(calendar.FullFormat))
+	assert.Equal(t, "%Fri%", d.Format("%%%w%%"))
+	assert.Equal(t, "Friday, September 22, 2017 AD", d.Format("%W, %M %D, %y"))
+
+	d = calendar.MustNewDate(9, 22, -1)
+	assert.Equal(t, "9/22/1 BC", d.Format(calendar.ShortFormat))
+	assert.Equal(t, "Sep 22, 1 BC", d.Format(calendar.MediumFormat))
+	assert.Equal(t, "September 22, 1 BC", d.Format(calendar.LongFormat))
+	assert.Equal(t, "Thursday, September 22, 1 BC", d.Format(calendar.FullFormat))
+	assert.Equal(t, "%Thu%", d.Format("%%%w%%"))
+	assert.Equal(t, "Thursday, September 22, 1 BC", d.Format("%W, %M %D, %y"))
 }
 
 func TestNewDate(t *testing.T) {

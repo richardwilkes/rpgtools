@@ -7,7 +7,7 @@ import (
 
 // WriteYearBlock writes a text representation of the year.
 func WriteYearBlock(year int, w io.Writer) {
-	fmt.Fprintln(w, "Year", year)
+	MustNewDate(1, 1, year).WriteFormat(w, "Year %Y\n")
 	max := len(Current.Months)
 	for i := 1; i <= max; i++ {
 		fmt.Fprintln(w)
