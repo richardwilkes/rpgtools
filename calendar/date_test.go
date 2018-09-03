@@ -10,11 +10,11 @@ import (
 
 func TestYear(t *testing.T) {
 	daysPerYear := calendar.Current.DaysPerYear()
-	assert.Equal(t, -2, calendar.Date(-daysPerYear-1).Year(), "Last day of year -2")
-	assert.Equal(t, -1, calendar.Date(-daysPerYear).Year(), "First day of year -1")
-	assert.Equal(t, -1, calendar.Date(-1).Year(), "Last day of year -1")
-	assert.Equal(t, 0, calendar.Date(0).Year(), "First day of year 0")
-	assert.Equal(t, 0, calendar.Date(daysPerYear-1).Year(), "Last day of year 0")
+	assert.Equal(t, -3, calendar.Date(-daysPerYear-1).Year(), "Last day of year -3")
+	assert.Equal(t, -2, calendar.Date(-daysPerYear).Year(), "First day of year -2")
+	assert.Equal(t, -2, calendar.Date(-1).Year(), "Last day of year -2")
+	assert.Equal(t, -1, calendar.Date(0).Year(), "First day of year -1")
+	assert.Equal(t, -1, calendar.Date(daysPerYear-1).Year(), "Last day of year -1")
 	assert.Equal(t, 1, calendar.Date(daysPerYear).Year(), "First day of year 1")
 	assert.Equal(t, 1, calendar.Date(daysPerYear*2-1).Year(), "Last day of year 1")
 	assert.Equal(t, 2, calendar.Date(daysPerYear*2).Year(), "First day of year 2")
@@ -22,11 +22,11 @@ func TestYear(t *testing.T) {
 
 func TestDayInYear(t *testing.T) {
 	daysPerYear := calendar.Current.DaysPerYear()
-	assert.Equal(t, daysPerYear, calendar.Date(-daysPerYear-1).DayInYear(), "Last day of year -2")
-	assert.Equal(t, 1, calendar.Date(-daysPerYear).DayInYear(), "First day of year -1")
-	assert.Equal(t, daysPerYear, calendar.Date(-1).DayInYear(), "Last day of year -1")
-	assert.Equal(t, 1, calendar.Date(0).DayInYear(), "First day of year 0")
-	assert.Equal(t, daysPerYear, calendar.Date(daysPerYear-1).DayInYear(), "Last day of year 0")
+	assert.Equal(t, daysPerYear, calendar.Date(-daysPerYear-1).DayInYear(), "Last day of year -3")
+	assert.Equal(t, 1, calendar.Date(-daysPerYear).DayInYear(), "First day of year -2")
+	assert.Equal(t, daysPerYear, calendar.Date(-1).DayInYear(), "Last day of year -2")
+	assert.Equal(t, 1, calendar.Date(0).DayInYear(), "First day of year -1")
+	assert.Equal(t, daysPerYear, calendar.Date(daysPerYear-1).DayInYear(), "Last day of year -1")
 	assert.Equal(t, 1, calendar.Date(daysPerYear).DayInYear(), "First day of year 1")
 	assert.Equal(t, daysPerYear, calendar.Date(daysPerYear*2-1).DayInYear(), "Last day of year 1")
 	assert.Equal(t, 1, calendar.Date(daysPerYear*2).DayInYear(), "First day of year 2")
@@ -65,21 +65,31 @@ func TestWeekDay(t *testing.T) {
 func TestDateToString(t *testing.T) {
 	assert.Equal(t, "1/1/2017", calendar.Date(736205).String())
 	assert.Equal(t, "9/22/2017", calendar.Date(736469).String())
-	assert.Equal(t, "12/31/-1", calendar.Date(-1).String())
+	assert.Equal(t, "12/31/-1", calendar.Date(364).String())
+	assert.Equal(t, "12/31/-2", calendar.Date(-1).String())
+	assert.Equal(t, "1/1/-1", calendar.Date(0).String())
+	assert.Equal(t, "1/1/1", calendar.Date(365).String())
+	assert.Equal(t, "1/1/1", calendar.Date(365).String())
+}
 
-	assert.Equal(t, "January 1, 2017", calendar.Date(736205).MediumString())
-	assert.Equal(t, "September 22, 2017", calendar.Date(736469).MediumString())
-	assert.Equal(t, "December 31, -1", calendar.Date(-1).MediumString())
-
-	assert.Equal(t, "Sunday, January 1, 2017", calendar.Date(736205).LongString())
-	assert.Equal(t, "Friday, September 22, 2017", calendar.Date(736469).LongString())
-	assert.Equal(t, "Friday, December 31, -1", calendar.Date(-1).LongString())
+func TestFormat(t *testing.T) {
+	d := calendar.MustNewDate(9, 22, 2017)
+	assert.Equal(t, "September 22, 2017", d.Format(false, false, false))
+	assert.Equal(t, "September 22, 2017 AD", d.Format(false, false, true))
+	assert.Equal(t, "Sep 22, 2017", d.Format(false, true, false))
+	assert.Equal(t, "Sep 22, 2017 AD", d.Format(false, true, true))
+	assert.Equal(t, "Friday, September 22, 2017", d.Format(true, false, false))
+	assert.Equal(t, "Friday, September 22, 2017 AD", d.Format(true, false, true))
+	assert.Equal(t, "Friday, Sep 22, 2017", d.Format(true, true, false))
+	assert.Equal(t, "Friday, Sep 22, 2017 AD", d.Format(true, true, true))
 }
 
 func TestNewDate(t *testing.T) {
-	date, err := calendar.NewDate(1, 1, 0)
+	date, err := calendar.NewDate(1, 1, 1)
 	assert.NoError(t, err)
-	assert.Equal(t, 0, int(date))
+	assert.Equal(t, 365, int(date))
+	_, err = calendar.NewDate(1, 1, 0)
+	assert.Error(t, err)
 	date, err = calendar.NewDate(9, 22, 2017)
 	assert.NoError(t, err)
 	assert.Equal(t, 736469, int(date))
@@ -112,6 +122,12 @@ func TestParseDate(t *testing.T) {
 	assert.Error(t, err)
 	_, err = calendar.ParseDate("13/22/2017")
 	assert.Error(t, err)
+	date, err = calendar.ParseDate("September 22, 2017 AD")
+	assert.NoError(t, err)
+	assert.Equal(t, targetDate, date)
+	date, err = calendar.ParseDate("September 22, 1 BC")
+	assert.NoError(t, err)
+	assert.Equal(t, calendar.MustNewDate(9, 22, -1), date)
 
 	targetDate = calendar.MustNewDate(9, 22, -2017)
 	date, err = calendar.ParseDate("9/22/-2017")

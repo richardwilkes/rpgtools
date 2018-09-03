@@ -45,7 +45,7 @@ func New(cfg *Config, spec string) *Dice {
 	if cfg == nil {
 		cfg = DefaultConfig
 	} else if cfg.Randomizer == nil {
-		panic("cfg.Randomizer must be specified")
+		panic("cfg.Randomizer must be specified") // @allow
 	}
 	dice := &Dice{Config: cfg}
 	match := diceRegexOnly.FindStringSubmatch(spec)

@@ -5,10 +5,12 @@ import "github.com/richardwilkes/toolbox/errs"
 
 // Calendar holds the data for the calendar.
 type Calendar struct {
-	FirstWeekDayOfZeroYear int      `json:"first_weekday_of_zero_year" yaml:"first_weekday_of_zero_year"`
-	WeekDays               []string `json:"weekdays" yaml:"weekdays"`
-	Months                 []Month  `json:"months" yaml:"months"`
-	Seasons                []Season `json:"seasons" yaml:"seasons"`
+	FirstWeekDayOfFirstYear int      `json:"first_weekday_of_first_year" yaml:"first_weekday_of_first_year"`
+	WeekDays                []string `json:"weekdays" yaml:"weekdays"`
+	Months                  []Month  `json:"months" yaml:"months"`
+	Seasons                 []Season `json:"seasons" yaml:"seasons"`
+	YearSuffix              string   `json:"year_suffix" yaml:"year_suffix"`
+	YearBeforeSuffix        string   `json:"year_before_suffix" yaml:"year_before_suffix"`
 }
 
 // DaysPerYear returns the number of days contained in a single year.
@@ -31,7 +33,7 @@ func (cal *Calendar) Valid() error {
 	if len(cal.Seasons) == 0 {
 		return errs.New("Calendar must have at least one season")
 	}
-	if cal.FirstWeekDayOfZeroYear < 0 || cal.FirstWeekDayOfZeroYear >= len(cal.WeekDays) {
+	if cal.FirstWeekDayOfFirstYear < 0 || cal.FirstWeekDayOfFirstYear >= len(cal.WeekDays) {
 		return errs.New("Calendar's first week day of the zero year must be a valid week day")
 	}
 	for _, weekday := range cal.WeekDays {
