@@ -1,16 +1,5 @@
 package calendar
 
-import (
-	"regexp"
-)
-
-var (
-	// "9/22/2017" or "9/22/2017 AD"
-	regexMMDDYYY = regexp.MustCompile("([[:digit:]]+)/([[:digit:]]+)/(-?[[:digit:]]+) *([[:alpha:]]+)?")
-	// "September 22, 2017 AD", "September 22, 2017", "Sep 22, 2017 AD", or "Sep 22, 2017"
-	regexMonthDDYYYY = regexp.MustCompile("([[:alpha:]]+) *([[:digit:]]+), *(-?[[:digit:]]+) *([[:alpha:]]+)?")
-)
-
 // Date holds a calendar date. This is the number of days since 1/1/1 in the
 // calendar. Note that the value -1 refers to the last day of the year -1, not
 // year 0, as there is no year 0.

@@ -2,6 +2,7 @@
 package calendar
 
 import (
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -9,9 +10,15 @@ import (
 	"github.com/richardwilkes/toolbox/txt"
 )
 
-// Default is the default calendar that will be used by Date.UnmarshalText()
-// if the date was not initialized.
-var Default = Gregorian()
+var (
+	// Default is the default calendar that will be used by Date.UnmarshalText()
+	// if the date was not initialized.
+	Default = Gregorian()
+	// "9/22/2017" or "9/22/2017 AD"
+	regexMMDDYYY = regexp.MustCompile("([[:digit:]]+)/([[:digit:]]+)/(-?[[:digit:]]+) *([[:alpha:]]+)?")
+	// "September 22, 2017 AD", "September 22, 2017", "Sep 22, 2017 AD", or "Sep 22, 2017"
+	regexMonthDDYYYY = regexp.MustCompile("([[:alpha:]]+) *([[:digit:]]+), *(-?[[:digit:]]+) *([[:alpha:]]+)?")
+)
 
 // Calendar holds the data for the calendar.
 type Calendar struct {
