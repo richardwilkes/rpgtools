@@ -2,6 +2,8 @@
 package calendar
 
 import (
+	"fmt"
+	"io"
 	"regexp"
 	"strconv"
 	"strings"
@@ -197,4 +199,25 @@ func (cal *Calendar) IsLeapMonth(month int) bool {
 		return cal.LeapYear.Month == month
 	}
 	return false
+}
+
+// Text writes a text representation of the year.
+func (cal *Calendar) Text(year int, w io.Writer) {
+	date := cal.MustNewDate(1, 1, year)
+	date.WriteFormat(w, "Year %Y\n")
+	max := len(cal.Months)
+	for i := 1; i <= max; i++ {
+		fmt.Fprintln(w)
+		cal.MustNewDate(i, 1, year).TextCalendarMonth(w)
+	}
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, "Seasons:")
+	for i := range cal.Seasons {
+		fmt.Fprintf(w, "  %v\n", &cal.Seasons[i])
+	}
+	fmt.Println()
+	fmt.Fprintln(w, "Week Days:")
+	for i, weekday := range cal.WeekDays {
+		fmt.Fprintf(w, "  %d: (%s) %s\n", i+1, weekday[:1], weekday)
+	}
 }
