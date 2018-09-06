@@ -1,11 +1,13 @@
-package calendar
+package pathfinder
 
-// Absalom returns a new Pathfinder Absalom calendar.
-func Absalom() *Calendar {
-	return &Calendar{
+import "github.com/richardwilkes/rpgtools/calendar"
+
+// Imperial returns a new Pathfinder Imperial calendar.
+func Imperial() *calendar.Calendar {
+	return &calendar.Calendar{
 		FirstWeekDayOfFirstYear: 0,
 		WeekDays:                []string{"Moonday", "Toilday", "Wealday", "Oathday", "Fireday", "Starday", "Sunday"},
-		Months: []Month{
+		Months: []calendar.Month{
 			{
 				Name: "Abadius",
 				Days: 31,
@@ -55,7 +57,7 @@ func Absalom() *Calendar {
 				Days: 31,
 			},
 		},
-		Seasons: []Season{
+		Seasons: []calendar.Season{
 			{
 				Name:       "Winter",
 				StartMonth: 12,
@@ -85,7 +87,11 @@ func Absalom() *Calendar {
 				EndDay:     31,
 			},
 		},
-		YearSuffix:       "AR",
-		YearBeforeSuffix: "AR",
+		YearSuffix:       "IC",
+		YearBeforeSuffix: "IC",
+		LeapYear: &calendar.LeapYear{
+			Month: 2,
+			Every: 8,
+		},
 	}
 }

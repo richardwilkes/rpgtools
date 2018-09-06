@@ -6,7 +6,7 @@ var Current = Default()
 // Default returns a new default calendar.
 func Default() *Calendar {
 	return &Calendar{
-		FirstWeekDayOfFirstYear: 6,
+		FirstWeekDayOfFirstYear: 1,
 		WeekDays:                []string{"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"},
 		Months: []Month{
 			{
@@ -90,5 +90,11 @@ func Default() *Calendar {
 		},
 		YearSuffix:       "AD",
 		YearBeforeSuffix: "BC",
+		LeapYear: &LeapYear{
+			Month:  2,
+			Every:  4,
+			Except: 100,
+			Unless: 400,
+		},
 	}
 }

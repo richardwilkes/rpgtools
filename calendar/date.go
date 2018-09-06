@@ -16,8 +16,10 @@ var (
 	regexMonthDDYYYY = regexp.MustCompile("([[:alpha:]]+) *([[:digit:]]+), *(-?[[:digit:]]+) *([[:alpha:]]+)?")
 )
 
-// Date holds a calendar date.
-type Date int64
+// Date holds a calendar date. This is the number of days since 1/1/1 in the
+// calendar. Note that the value -1 refers to the last day of the year -1, not
+// year 0, as there is no year 0.
+type Date int32
 
 // MustNewDate creates a new date from the specified month, day and year.
 // Panics if the values are invalid.
@@ -31,23 +33,27 @@ func MustNewDate(month, day, year int) Date {
 
 // NewDate creates a new date from the specified month, day and year.
 func NewDate(month, day, year int) (Date, error) {
-	if month < 1 || month > len(Current.Months) {
-		return 0, errs.Newf("month %d is invalid", month)
-	}
-	if day < 1 || day > Current.Months[month-1].Days {
-		return 0, errs.Newf("day %d is invalid", day)
-	}
 	if year == 0 {
 		return 0, errs.New("year 0 is invalid")
 	}
-	if year < 0 {
-		year++
+	if month < 1 || month > len(Current.Months) {
+		return 0, errs.Newf("month %d is invalid", month)
 	}
-	date := year*Current.DaysPerYear() + day - 1
+	days := Current.Months[month-1].Days
+	if Current.IsLeapMonth(month) && Current.IsLeapYear(year) {
+		days++
+	}
+	if day < 1 || day > days {
+		return 0, errs.Newf("day %d is invalid", day)
+	}
+	days = yearToDays(year) + day - 1
 	for i := 1; i < month; i++ {
-		date += Current.Months[i-1].Days
+		days += Current.Months[i-1].Days
 	}
-	return Date(date), nil
+	if Current.IsLeapYear(year) && Current.LeapYear.Month < month {
+		days++
+	}
+	return Date(days), nil
 }
 
 // ParseDate creates a new date from the specified text.
@@ -85,26 +91,59 @@ func parseDate(month int, dayText, yearText, suffixText string) (Date, error) {
 	return NewDate(month, day, year)
 }
 
+func yearToDays(year int) int {
+	var days int
+	if year > 1 {
+		days = (year - 1) * Current.MinDaysPerYear()
+	} else if year < 0 {
+		days = year * Current.MinDaysPerYear()
+	}
+	if Current.LeapYear != nil {
+		leaps := Current.LeapYear.Since(year)
+		if year > 1 {
+			days += leaps
+		} else {
+			days -= leaps
+			if Current.LeapYear.Is(year) {
+				days--
+			}
+		}
+	}
+	return days
+}
+
 // Year returns the year of the date.
 func (date Date) Year() int {
-	daysPerYear := Current.DaysPerYear()
 	days := int(date)
-	if days < daysPerYear {
-		days -= daysPerYear
-		return -(1 - ((days + 1) / daysPerYear))
+	estimate := days / Current.MinDaysPerYear()
+	if days < 0 {
+		estimate--
+		for days >= yearToDays(estimate+1) {
+			estimate++
+		}
+	} else {
+		estimate++
+		for days < yearToDays(estimate) {
+			estimate--
+		}
 	}
-	return days / daysPerYear
+	return estimate
 }
 
 // Month returns the month of the date. Note that the first month is
 // represented by 1, not 0.
 func (date Date) Month() int {
+	isLeapYear := Current.IsLeapYear(date.Year())
 	days := date.DayInYear()
 	for i, month := range Current.Months {
-		if days <= month.Days {
+		amt := month.Days
+		if isLeapYear && Current.IsLeapMonth(i+1) {
+			amt++
+		}
+		if days <= amt {
 			return i + 1
 		}
-		days -= month.Days
+		days -= amt
 	}
 	// If this is reached, the algorithm is wrong.
 	panic("Unable to determine month") // @allow
@@ -118,22 +157,23 @@ func (date Date) MonthName() string {
 // DayInYear returns the day within the year of the date. Note that the first
 // day is represented by a 1, not 0.
 func (date Date) DayInYear() int {
-	year := date.Year()
-	if year < 0 {
-		year++
-	}
-	return 1 + int(date) - (year * Current.DaysPerYear())
+	return 1 + int(date) - yearToDays(date.Year())
 }
 
 // DayInMonth returns the day within the month of the date. Note that the
 // first day is represented by a 1, not 0.
 func (date Date) DayInMonth() int {
+	isLeapYear := Current.IsLeapYear(date.Year())
 	days := date.DayInYear()
-	for _, month := range Current.Months {
-		if days <= month.Days {
+	for i, month := range Current.Months {
+		amt := month.Days
+		if isLeapYear && Current.IsLeapMonth(i+1) {
+			amt++
+		}
+		if days <= amt {
 			return days
 		}
-		days -= month.Days
+		days -= amt
 	}
 	// If this is reached, the algorithm is wrong.
 	panic("Unable to determine day in month") // @allow

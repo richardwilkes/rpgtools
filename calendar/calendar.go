@@ -5,21 +5,13 @@ import "github.com/richardwilkes/toolbox/errs"
 
 // Calendar holds the data for the calendar.
 type Calendar struct {
-	FirstWeekDayOfFirstYear int      `json:"first_weekday_of_first_year" yaml:"first_weekday_of_first_year"`
-	WeekDays                []string `json:"weekdays" yaml:"weekdays"`
-	Months                  []Month  `json:"months" yaml:"months"`
-	Seasons                 []Season `json:"seasons" yaml:"seasons"`
-	YearSuffix              string   `json:"year_suffix" yaml:"year_suffix"`
-	YearBeforeSuffix        string   `json:"year_before_suffix" yaml:"year_before_suffix"`
-}
-
-// DaysPerYear returns the number of days contained in a single year.
-func (cal *Calendar) DaysPerYear() int {
-	days := 0
-	for _, month := range cal.Months {
-		days += month.Days
-	}
-	return days
+	FirstWeekDayOfFirstYear int       `json:"first_weekday_of_first_year" yaml:"first_weekday_of_first_year"`
+	WeekDays                []string  `json:"weekdays"`
+	Months                  []Month   `json:"months"`
+	Seasons                 []Season  `json:"seasons"`
+	YearSuffix              string    `json:"year_suffix,omitempty" yaml:",omitempty"`
+	YearBeforeSuffix        string    `json:"year_before_suffix,omitempty" yaml:",omitempty"`
+	LeapYear                *LeapYear `json:"leap_year,omitempty" yaml:",omitempty"`
 }
 
 // Valid returns nil if the calendar data is usable.
@@ -51,5 +43,44 @@ func (cal *Calendar) Valid() error {
 			return err
 		}
 	}
+	if cal.LeapYear != nil {
+		if err := cal.LeapYear.Valid(cal); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+// MinDaysPerYear returns the minimum number of days in a year.
+func (cal *Calendar) MinDaysPerYear() int {
+	days := 0
+	for _, month := range cal.Months {
+		days += month.Days
+	}
+	return days
+}
+
+// Days returns the number of days contained in a specific year.
+func (cal *Calendar) Days(year int) int {
+	days := cal.MinDaysPerYear()
+	if cal.IsLeapYear(year) {
+		days++
+	}
+	return days
+}
+
+// IsLeapYear returns true if the year is a leap year.
+func (cal *Calendar) IsLeapYear(year int) bool {
+	if cal.LeapYear != nil {
+		return cal.LeapYear.Is(year)
+	}
+	return false
+}
+
+// IsLeapMonth returns true if the month is the leap month.
+func (cal *Calendar) IsLeapMonth(month int) bool {
+	if cal.LeapYear != nil {
+		return cal.LeapYear.Month == month
+	}
+	return false
 }
