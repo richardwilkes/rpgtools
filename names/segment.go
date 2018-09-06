@@ -4,8 +4,8 @@ import "github.com/richardwilkes/toolbox/xmath/rand"
 
 // Segment holds string segment and its frequency of occurrence.
 type Segment struct {
-	Value string `json:"value" yaml:"value"`
-	Freq  int    `json:"freq" yaml:"freq"`
+	Value string `json:"value"`
+	Freq  int    `json:"freq"`
 }
 
 // PickSegmentValue picks a value from the segment slice.

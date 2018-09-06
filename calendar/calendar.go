@@ -1,17 +1,27 @@
 // Package calendar provides a customizable calendar for roleplaying games.
 package calendar
 
-import "github.com/richardwilkes/toolbox/errs"
+import (
+	"strconv"
+	"strings"
+
+	"github.com/richardwilkes/toolbox/errs"
+	"github.com/richardwilkes/toolbox/txt"
+)
+
+// Default is the default calendar that will be used by Date.UnmarshalText()
+// if the date was not initialized.
+var Default = Gregorian()
 
 // Calendar holds the data for the calendar.
 type Calendar struct {
-	FirstWeekDayOfFirstYear int       `json:"first_weekday_of_first_year" yaml:"first_weekday_of_first_year"`
-	WeekDays                []string  `json:"weekdays"`
-	Months                  []Month   `json:"months"`
-	Seasons                 []Season  `json:"seasons"`
-	YearSuffix              string    `json:"year_suffix,omitempty" yaml:",omitempty"`
-	YearBeforeSuffix        string    `json:"year_before_suffix,omitempty" yaml:",omitempty"`
-	LeapYear                *LeapYear `json:"leap_year,omitempty" yaml:",omitempty"`
+	DayZeroWeekDay int       `json:"day_zero_weekday" yaml:"day_zero_weekday"`
+	WeekDays       []string  `json:"weekdays"`
+	Months         []Month   `json:"months"`
+	Seasons        []Season  `json:"seasons"`
+	Era            string    `json:"era,omitempty" yaml:",omitempty"`
+	PreviousEra    string    `json:"previous_era,omitempty" yaml:"previous_era,omitempty"`
+	LeapYear       *LeapYear `json:"leapyear,omitempty" yaml:",omitempty"`
 }
 
 // Valid returns nil if the calendar data is usable.
@@ -25,8 +35,8 @@ func (cal *Calendar) Valid() error {
 	if len(cal.Seasons) == 0 {
 		return errs.New("Calendar must have at least one season")
 	}
-	if cal.FirstWeekDayOfFirstYear < 0 || cal.FirstWeekDayOfFirstYear >= len(cal.WeekDays) {
-		return errs.New("Calendar's first week day of the zero year must be a valid week day")
+	if cal.DayZeroWeekDay < 0 || cal.DayZeroWeekDay >= len(cal.WeekDays) {
+		return errs.New("Calendar's first week day of the first year must be a valid week day")
 	}
 	for _, weekday := range cal.WeekDays {
 		if weekday == "" {
@@ -49,6 +59,103 @@ func (cal *Calendar) Valid() error {
 		}
 	}
 	return nil
+}
+
+// MustNewDate creates a new date from the specified month, day and year.
+// Panics if the values are invalid.
+func (cal *Calendar) MustNewDate(month, day, year int) Date {
+	date, err := cal.NewDate(month, day, year)
+	if err != nil {
+		panic(err) // @allow
+	}
+	return date
+}
+
+// NewDate creates a new date from the specified month, day and year.
+func (cal *Calendar) NewDate(month, day, year int) (Date, error) {
+	if year == 0 {
+		return Date{cal: cal}, errs.New("year 0 is invalid")
+	}
+	if month < 1 || month > len(cal.Months) {
+		return Date{cal: cal}, errs.Newf("month %d is invalid", month)
+	}
+	days := cal.Months[month-1].Days
+	if cal.IsLeapMonth(month) && cal.IsLeapYear(year) {
+		days++
+	}
+	if day < 1 || day > days {
+		return Date{cal: cal}, errs.Newf("day %d is invalid", day)
+	}
+	days = cal.yearToDays(year) + day - 1
+	for i := 1; i < month; i++ {
+		days += cal.Months[i-1].Days
+	}
+	if cal.IsLeapYear(year) && cal.LeapYear.Month < month {
+		days++
+	}
+	return Date{Days: days, cal: cal}, nil
+}
+
+// NewDateByDays creates a new date from a number of days, with 0 representing
+// the date 1/1/1.
+func (cal *Calendar) NewDateByDays(days int) Date {
+	return Date{Days: days, cal: cal}
+}
+
+func (cal *Calendar) yearToDays(year int) int {
+	var days int
+	if year > 1 {
+		days = (year - 1) * cal.MinDaysPerYear()
+	} else if year < 0 {
+		days = year * cal.MinDaysPerYear()
+	}
+	if cal.LeapYear != nil {
+		leaps := cal.LeapYear.Since(year)
+		if year > 1 {
+			days += leaps
+		} else {
+			days -= leaps
+			if cal.LeapYear.Is(year) {
+				days--
+			}
+		}
+	}
+	return days
+}
+
+// ParseDate creates a new date from the specified text.
+func (cal *Calendar) ParseDate(in string) (Date, error) {
+	if parts := regexMMDDYYY.FindStringSubmatch(in); parts != nil {
+		month, err := strconv.Atoi(parts[1])
+		if err != nil {
+			return Date{cal: cal}, errs.NewfWithCause(err, "invalid month text '%s'", parts[1])
+		}
+		return cal.parseDate(month, parts[2], parts[3], parts[4])
+	}
+	if parts := regexMonthDDYYYY.FindStringSubmatch(in); parts != nil {
+		for i, month := range cal.Months {
+			if strings.EqualFold(parts[1], month.Name) || strings.EqualFold(parts[1], txt.FirstN(month.Name, 3)) {
+				return cal.parseDate(i+1, parts[2], parts[3], parts[4])
+			}
+		}
+		return Date{cal: cal}, errs.Newf("invalid month text '%s'", parts[1])
+	}
+	return Date{cal: cal}, errs.Newf("invalid date text '%s'", in)
+}
+
+func (cal *Calendar) parseDate(month int, dayText, yearText, eraText string) (Date, error) {
+	year, err := strconv.Atoi(yearText)
+	if err != nil {
+		return Date{cal: cal}, errs.NewfWithCause(err, "invalid year text '%s'", yearText)
+	}
+	day, err := strconv.Atoi(dayText)
+	if err != nil {
+		return Date{cal: cal}, errs.NewfWithCause(err, "invalid day text '%s'", dayText)
+	}
+	if cal.PreviousEra != "" && strings.EqualFold(cal.PreviousEra, eraText) {
+		year = -year
+	}
+	return cal.NewDate(month, day, year)
 }
 
 // MinDaysPerYear returns the minimum number of days in a year.

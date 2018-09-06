@@ -37,12 +37,11 @@ func (date Date) Format(layout string) string {
 //   %D  Day, e.g. '2'
 //   %d  Day padded with zeroes, e.g. '02'
 //   %Y  Year, e.g. '2017' if positive, '2017 BC' if negative; however, if the
-//       dating suffixes aren't empty and match each other, then this will
-//       behave the same as %y
-//   %y  Year with dating suffix, e.g. '2017 AD'; however, if the dating
-//       suffixes are empty or they match each other, then negative years will
-//       result in '-2017 AD'
-//   %z  Year without dating suffix, e.g. '2017' or '-2017'
+//       eras aren't empty and match each other, then this will behave the
+//       same as %y
+//   %y  Year with era, e.g. '2017 AD'; however, if the eras are empty or they
+//       match each other, then negative years will result in '-2017 AD'
+//   %z  Year without the era, e.g. '2017' or '-2017'
 //   %%  %
 func (date Date) WriteFormat(w io.Writer, layout string) {
 	cmd := false
@@ -62,18 +61,18 @@ func (date Date) WriteFormat(w io.Writer, layout string) {
 			case 'N':
 				fmt.Fprint(w, date.Month())
 			case 'n':
-				fmt.Fprintf(w, "%0[1]*[2]d", widthNeeded(len(Current.Months)), date.Month())
+				fmt.Fprintf(w, "%0[1]*[2]d", widthNeeded(len(date.cal.Months)), date.Month())
 			case 'D':
 				fmt.Fprint(w, date.DayInMonth())
 			case 'd':
-				fmt.Fprintf(w, "%0[1]*[2]d", widthNeeded(Current.Months[date.Month()].Days), date.DayInMonth())
+				fmt.Fprintf(w, "%0[1]*[2]d", widthNeeded(date.cal.Months[date.Month()].Days), date.DayInMonth())
 			case 'Y':
 				year := date.Year()
-				if Current.YearBeforeSuffix != "" {
-					if Current.YearSuffix == Current.YearBeforeSuffix {
-						fmt.Fprintf(w, "%d %s", year, Current.YearBeforeSuffix)
+				if date.cal.PreviousEra != "" {
+					if date.cal.Era == date.cal.PreviousEra {
+						fmt.Fprintf(w, "%d %s", year, date.cal.PreviousEra)
 					} else if year < 0 {
-						fmt.Fprintf(w, "%d %s", -year, Current.YearBeforeSuffix)
+						fmt.Fprintf(w, "%d %s", -year, date.cal.PreviousEra)
 					} else {
 						fmt.Fprint(w, year)
 					}
@@ -81,13 +80,13 @@ func (date Date) WriteFormat(w io.Writer, layout string) {
 					fmt.Fprint(w, year)
 				}
 			case 'y':
-				suffix := date.Suffix()
+				era := date.Era()
 				year := date.Year()
-				if year < 0 && suffix != "" && Current.YearSuffix != Current.YearBeforeSuffix {
+				if year < 0 && era != "" && date.cal.Era != date.cal.PreviousEra {
 					year = -year
 				}
-				if suffix != "" {
-					fmt.Fprintf(w, "%d %s", year, suffix)
+				if era != "" {
+					fmt.Fprintf(w, "%d %s", year, era)
 				} else {
 					fmt.Fprint(w, year)
 				}

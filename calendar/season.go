@@ -8,7 +8,7 @@ import (
 
 // Season defines a seasonal period in the calendar.
 type Season struct {
-	Name       string `json:"name" yaml:"name"`
+	Name       string `json:"name"`
 	StartMonth int    `json:"start_month" yaml:"start_month"`
 	StartDay   int    `json:"start_day" yaml:"start_day"`
 	EndMonth   int    `json:"end_month" yaml:"end_month"`

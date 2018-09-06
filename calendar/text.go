@@ -6,32 +6,33 @@ import (
 )
 
 // WriteYearBlock writes a text representation of the year.
-func WriteYearBlock(year int, w io.Writer) {
-	MustNewDate(1, 1, year).WriteFormat(w, "Year %Y\n")
-	max := len(Current.Months)
+func (date Date) WriteYearBlock(w io.Writer) {
+	date.WriteFormat(w, "Year %Y\n")
+	year := date.Year()
+	max := len(date.cal.Months)
 	for i := 1; i <= max; i++ {
 		fmt.Fprintln(w)
-		WriteMonthBlock(MustNewDate(i, 1, year), w)
+		date.cal.MustNewDate(i, 1, year).WriteMonthBlock(w)
 	}
 	fmt.Fprintln(w)
-	WriteSeasonsBlock(w)
+	date.cal.WriteSeasonsBlock(w)
 	fmt.Println()
-	WriteWeekDaysBlock(w)
+	date.cal.WriteWeekDaysBlock(w)
 }
 
 // WriteMonthBlock writes a text representation of the month for the given
 // date.
-func WriteMonthBlock(date Date, w io.Writer) {
+func (date Date) WriteMonthBlock(w io.Writer) {
 	mostDays := 0
-	for _, m := range Current.Months {
+	for _, m := range date.cal.Months {
 		if mostDays < m.Days {
 			mostDays = m.Days
 		}
 	}
 	fmt.Fprintf(w, "%d: %s", date.Month(), date.MonthName())
-	lastDayOfWeek := len(Current.WeekDays) - 1
+	lastDayOfWeek := len(date.cal.WeekDays) - 1
 	width := len(fmt.Sprintf("%d", mostDays))
-	for i, weekday := range Current.WeekDays {
+	for i, weekday := range date.cal.WeekDays {
 		if i == 0 {
 			fmt.Fprint(w, "\n")
 		} else {
@@ -47,7 +48,7 @@ func WriteMonthBlock(date Date, w io.Writer) {
 	month := date.Month()
 	numFmt := fmt.Sprintf("%%%dd", width)
 	for i := 1; i <= max; i++ {
-		d := MustNewDate(month, i, year)
+		d := date.cal.MustNewDate(month, i, year)
 		weekDay := d.WeekDay()
 		if i == 1 || weekDay == 0 {
 			fmt.Fprint(w, "\n")
@@ -66,17 +67,17 @@ func WriteMonthBlock(date Date, w io.Writer) {
 }
 
 // WriteSeasonsBlock writes a text representation of the seasons.
-func WriteSeasonsBlock(w io.Writer) {
+func (cal *Calendar) WriteSeasonsBlock(w io.Writer) {
 	fmt.Fprintln(w, "Seasons:")
-	for i := range Current.Seasons {
-		fmt.Fprintf(w, "  %v\n", &Current.Seasons[i])
+	for i := range cal.Seasons {
+		fmt.Fprintf(w, "  %v\n", &cal.Seasons[i])
 	}
 }
 
 // WriteWeekDaysBlock writes a text representation of the week days.
-func WriteWeekDaysBlock(w io.Writer) {
+func (cal *Calendar) WriteWeekDaysBlock(w io.Writer) {
 	fmt.Fprintln(w, "Week Days:")
-	for i, weekday := range Current.WeekDays {
+	for i, weekday := range cal.WeekDays {
 		fmt.Fprintf(w, "  %d: (%s) %s\n", i+1, weekday[:1], weekday)
 	}
 }

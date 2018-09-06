@@ -32,7 +32,7 @@ type Data struct {
 	StartsWithVowelFreq     int                  `json:"starts_with_vowel_freq" yaml:"starts_with_vowel_freq"`
 	StartsWithConsonantFreq int                  `json:"starts_with_consonant_freq" yaml:"starts_with_consonant_freq"`
 	CountFreq               []int                `json:"count_freq" yaml:"count_freq"`
-	Segments                [ArraySize][]Segment `json:"segments" yaml:"segments"`
+	Segments                [ArraySize][]Segment `json:"segments"`
 }
 
 // Generator creates a new random name generator from this data.

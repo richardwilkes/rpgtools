@@ -1,13 +1,13 @@
 package calendar
 
-// Current is the current calendar.
-var Current = Default()
-
-// Default returns a new default calendar.
-func Default() *Calendar {
+// Gregorian returns a new calendar which mimics the Gregorian calendar,
+// although not precisely, as the real-world calendar has a lot of
+// irregularities to it prior to the 1600's. If you want a more precise
+// real-world calendar, use Go's time.Time instead.
+func Gregorian() *Calendar {
 	return &Calendar{
-		FirstWeekDayOfFirstYear: 1,
-		WeekDays:                []string{"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"},
+		DayZeroWeekDay: 1,
+		WeekDays:       []string{"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"},
 		Months: []Month{
 			{
 				Name: "January",
@@ -88,8 +88,8 @@ func Default() *Calendar {
 				EndDay:     31,
 			},
 		},
-		YearSuffix:       "AD",
-		YearBeforeSuffix: "BC",
+		Era:         "AD",
+		PreviousEra: "BC",
 		LeapYear: &LeapYear{
 			Month:  2,
 			Every:  4,

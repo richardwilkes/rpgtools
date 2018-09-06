@@ -4,8 +4,8 @@ import "github.com/richardwilkes/toolbox/errs"
 
 // Month holds information about a month within the calendar.
 type Month struct {
-	Name string `json:"name" yaml:"name"`
-	Days int    `json:"days" yaml:"days"`
+	Name string `json:"name"`
+	Days int    `json:"days"`
 }
 
 // Valid returns nil if the month data is usable.
