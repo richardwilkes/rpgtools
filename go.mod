@@ -1,7 +1,9 @@
 module github.com/richardwilkes/rpgtools
 
+go 1.13
+
 require (
 	github.com/dustin/go-humanize v1.0.0
-	github.com/richardwilkes/toolbox v1.8.2
-	github.com/stretchr/testify v1.3.0
+	github.com/richardwilkes/toolbox v1.12.0
+	github.com/stretchr/testify v1.4.0
 )

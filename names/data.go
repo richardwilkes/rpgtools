@@ -67,8 +67,9 @@ func (data *Data) Clone() *Data {
 // Code creates Go code for this data.
 func (data *Data) Code(pkg, varName string) (string, error) {
 	for i := range data.Segments {
-		sort.Slice(data.Segments[i], func(j, k int) bool {
-			return txt.NaturalLess(data.Segments[i][j].Value, data.Segments[i][k].Value, false)
+		segments := data.Segments[i]
+		sort.Slice(segments, func(j, k int) bool {
+			return txt.NaturalLess(segments[j].Value, segments[k].Value, false)
 		})
 	}
 	var buffer bytes.Buffer
