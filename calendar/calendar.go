@@ -137,7 +137,7 @@ func (cal *Calendar) ParseDate(in string) (Date, error) {
 	if parts := regexMMDDYYY.FindStringSubmatch(in); parts != nil {
 		month, err := strconv.Atoi(parts[1])
 		if err != nil {
-			return Date{cal: cal}, errs.NewfWithCause(err, "invalid month text '%s'", parts[1])
+			return Date{cal: cal}, errs.NewWithCausef(err, "invalid month text '%s'", parts[1])
 		}
 		return cal.parseDate(month, parts[2], parts[3], parts[4])
 	}
@@ -155,11 +155,11 @@ func (cal *Calendar) ParseDate(in string) (Date, error) {
 func (cal *Calendar) parseDate(month int, dayText, yearText, eraText string) (Date, error) {
 	year, err := strconv.Atoi(yearText)
 	if err != nil {
-		return Date{cal: cal}, errs.NewfWithCause(err, "invalid year text '%s'", yearText)
+		return Date{cal: cal}, errs.NewWithCausef(err, "invalid year text '%s'", yearText)
 	}
 	day, err := strconv.Atoi(dayText)
 	if err != nil {
-		return Date{cal: cal}, errs.NewfWithCause(err, "invalid day text '%s'", dayText)
+		return Date{cal: cal}, errs.NewWithCausef(err, "invalid day text '%s'", dayText)
 	}
 	if cal.PreviousEra != "" && strings.EqualFold(cal.PreviousEra, eraText) {
 		year = -year
