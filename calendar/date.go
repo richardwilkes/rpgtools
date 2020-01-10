@@ -203,11 +203,12 @@ func (date Date) WriteFormat(w io.Writer, layout string) {
 			case 'Y':
 				year := date.Year()
 				if date.cal.PreviousEra != "" {
-					if date.cal.Era == date.cal.PreviousEra {
+					switch {
+					case date.cal.Era == date.cal.PreviousEra:
 						fmt.Fprintf(w, "%d %s", year, date.cal.PreviousEra)
-					} else if year < 0 {
+					case year < 0:
 						fmt.Fprintf(w, "%d %s", -year, date.cal.PreviousEra)
-					} else {
+					default:
 						fmt.Fprint(w, year)
 					}
 				} else {
