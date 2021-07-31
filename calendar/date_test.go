@@ -16,7 +16,7 @@ import (
 	"github.com/richardwilkes/rpgtools/calendar"
 	"github.com/richardwilkes/rpgtools/calendar/pathfinder"
 	"github.com/stretchr/testify/assert"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 )
 
 func TestNewDate(t *testing.T) {
