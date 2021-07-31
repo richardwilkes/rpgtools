@@ -132,7 +132,7 @@ func (date Date) String() string {
 }
 
 // MarshalText implements the encoding.TextMarshaler interface.
-func (date *Date) MarshalText() ([]byte, error) {
+func (date Date) MarshalText() ([]byte, error) {
 	return []byte(date.String()), nil
 }
 

@@ -170,7 +170,7 @@ func (cal *Calendar) parseDate(month int, dayText, yearText, eraText string) (Da
 	if err != nil {
 		return Date{cal: cal}, errs.NewWithCausef(err, "invalid day text '%s'", dayText)
 	}
-	if cal.PreviousEra != "" && strings.EqualFold(cal.PreviousEra, eraText) {
+	if cal.PreviousEra != "" && cal.PreviousEra != cal.Era && strings.EqualFold(cal.PreviousEra, eraText) {
 		year = -year
 	}
 	return cal.NewDate(month, day, year)

@@ -14,11 +14,14 @@ import (
 	"testing"
 
 	"github.com/richardwilkes/rpgtools/calendar"
+	"github.com/richardwilkes/rpgtools/calendar/pathfinder"
 	"github.com/stretchr/testify/assert"
+	"gopkg.in/yaml.v2"
 )
 
 func TestNewDate(t *testing.T) {
 	cal := calendar.Gregorian()
+	calendar.Default = cal
 	d, err := cal.NewDate(1, 1, 1)
 	assert.NoError(t, err)
 	assert.Equal(t, cal.NewDateByDays(0), d)
@@ -55,6 +58,7 @@ func TestNewDate(t *testing.T) {
 
 func TestYear(t *testing.T) {
 	cal := calendar.Gregorian()
+	calendar.Default = cal
 	assert.Equal(t, 1, cal.NewDateByDays(0).Year(), "First day of year 1")
 	assert.Equal(t, 1, cal.NewDateByDays(364).Year(), "Last day of year 1")
 	assert.Equal(t, 2, cal.NewDateByDays(365).Year(), "First day of year 2")
@@ -78,6 +82,7 @@ func TestYear(t *testing.T) {
 
 func TestDayInYear(t *testing.T) {
 	cal := calendar.Gregorian()
+	calendar.Default = cal
 	assert.Equal(t, 1, cal.MustNewDate(1, 1, 1).DayInYear())
 	assert.Equal(t, 365, cal.MustNewDate(12, 31, 1).DayInYear())
 	assert.Equal(t, 1, cal.MustNewDate(1, 1, 2).DayInYear())
@@ -94,6 +99,7 @@ func TestDayInYear(t *testing.T) {
 
 func TestMonth(t *testing.T) {
 	cal := calendar.Gregorian()
+	calendar.Default = cal
 	assert.Equal(t, 1, cal.MustNewDate(1, 1, 1).Month())
 	assert.Equal(t, 1, cal.MustNewDate(1, 31, 1).Month())
 	assert.Equal(t, 2, cal.MustNewDate(2, 1, 1).Month())
@@ -111,6 +117,7 @@ func TestMonth(t *testing.T) {
 
 func TestDayInMonth(t *testing.T) {
 	cal := calendar.Gregorian()
+	calendar.Default = cal
 	assert.Equal(t, 1, cal.MustNewDate(1, 1, 1).DayInMonth())
 	assert.Equal(t, 31, cal.MustNewDate(1, 31, 1).DayInMonth())
 	assert.Equal(t, 1, cal.MustNewDate(2, 1, 1).DayInMonth())
@@ -130,6 +137,7 @@ func TestDayInMonth(t *testing.T) {
 
 func TestDateToString(t *testing.T) {
 	cal := calendar.Gregorian()
+	calendar.Default = cal
 	assert.Equal(t, "1/1/1", cal.MustNewDate(1, 1, 1).String())
 	assert.Equal(t, "12/31/1", cal.MustNewDate(12, 31, 1).String())
 	assert.Equal(t, "1/1/2", cal.MustNewDate(1, 1, 2).String())
@@ -145,6 +153,7 @@ func TestDateToString(t *testing.T) {
 
 func TestWeekDay(t *testing.T) {
 	cal := calendar.Gregorian()
+	calendar.Default = cal
 	assert.Equal(t, 1, cal.MustNewDate(1, 1, 1).WeekDay())
 	assert.Equal(t, 4, cal.MustNewDate(1, 4, 1).WeekDay())
 	assert.Equal(t, 1, cal.MustNewDate(1, 8, 1).WeekDay())
@@ -157,6 +166,7 @@ func TestWeekDay(t *testing.T) {
 
 func TestFormat(t *testing.T) {
 	cal := calendar.Gregorian()
+	calendar.Default = cal
 	d := cal.MustNewDate(9, 22, 2017)
 	assert.Equal(t, "9/22/2017", d.Format(calendar.ShortFormat))
 	assert.Equal(t, "Sep 22, 2017", d.Format(calendar.MediumFormat))
@@ -176,6 +186,7 @@ func TestFormat(t *testing.T) {
 
 func TestParseDate(t *testing.T) {
 	cal := calendar.Gregorian()
+	calendar.Default = cal
 	targetDate := cal.MustNewDate(9, 22, 2017)
 	date, err := cal.ParseDate("A long, rambling prefix September 22, 2017 and a long suffix")
 	assert.NoError(t, err)
@@ -216,6 +227,7 @@ func TestParseDate(t *testing.T) {
 
 func TestMarshaling(t *testing.T) {
 	cal := calendar.Gregorian()
+	calendar.Default = cal
 	date := cal.MustNewDate(9, 22, 2017)
 	text, err := date.MarshalText()
 	assert.NoError(t, err)
@@ -229,6 +241,10 @@ func TestMarshaling(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, `{"Date":"9/22/2017"}`, string(text))
 
+	text, err = yaml.Marshal(&embeddedDate)
+	assert.NoError(t, err)
+	assert.Equal(t, "date: 9/22/2017\n", string(text))
+
 	type embeddedPtr struct {
 		Date *calendar.Date
 	}
@@ -236,10 +252,15 @@ func TestMarshaling(t *testing.T) {
 	text, err = json.Marshal(&embeddedPtrDate)
 	assert.NoError(t, err)
 	assert.Equal(t, `{"Date":"9/22/2017"}`, string(text))
+
+	text, err = yaml.Marshal(&embeddedPtrDate)
+	assert.NoError(t, err)
+	assert.Equal(t, "date: 9/22/2017\n", string(text))
 }
 
 func TestUnmarshaling(t *testing.T) {
 	cal := calendar.Gregorian()
+	calendar.Default = cal
 	target := cal.MustNewDate(9, 22, 2017)
 	var date calendar.Date
 	assert.NoError(t, date.UnmarshalText([]byte("9/22/2017")))
@@ -252,10 +273,23 @@ func TestUnmarshaling(t *testing.T) {
 	assert.NoError(t, json.Unmarshal([]byte(`{"Date":"9/22/2017"}`), &embeddedDate))
 	assert.Equal(t, target, embeddedDate.Date)
 
+	assert.NoError(t, yaml.Unmarshal([]byte(`date: 9/22/2017`), &embeddedDate))
+	assert.Equal(t, target, embeddedDate.Date)
+
 	type embeddedPtr struct {
 		Date *calendar.Date
 	}
 	var embeddedPtrDate embeddedPtr
 	assert.NoError(t, json.Unmarshal([]byte(`{"Date":"9/22/2017"}`), &embeddedPtrDate))
 	assert.Equal(t, target, *embeddedPtrDate.Date)
+
+	assert.NoError(t, yaml.Unmarshal([]byte(`date: 9/22/2017`), &embeddedPtrDate))
+	assert.Equal(t, target, *embeddedPtrDate.Date)
+
+	cal = pathfinder.AbsalomReckoning()
+	calendar.Default = cal
+	date = calendar.Date{}
+	target = cal.MustNewDate(9, 22, 2017)
+	assert.NoError(t, date.UnmarshalText([]byte("9/22/2017 AR")))
+	assert.Equal(t, target, date)
 }
