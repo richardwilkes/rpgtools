@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	diceRegexStr = `(((\d+)?[dD](\d+)+)|((\d+)+[dD](\d+)?)){1}([-+]\d+)?([xX](\d+))?`
+	diceRegexStr = `(((\d+)?[dD](\d+))|((\d+)[dD](\d+)?)){1}([-+]\d+)?([xX](\d+))?`
 	defaultSides = 6
 )
 
