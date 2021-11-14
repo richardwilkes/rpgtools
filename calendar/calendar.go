@@ -196,18 +196,12 @@ func (cal *Calendar) Days(year int) int {
 
 // IsLeapYear returns true if the year is a leap year.
 func (cal *Calendar) IsLeapYear(year int) bool {
-	if cal.LeapYear != nil {
-		return cal.LeapYear.Is(year)
-	}
-	return false
+	return cal.LeapYear != nil && cal.LeapYear.Is(year)
 }
 
 // IsLeapMonth returns true if the month is the leap month.
 func (cal *Calendar) IsLeapMonth(month int) bool {
-	if cal.LeapYear != nil {
-		return cal.LeapYear.Month == month
-	}
-	return false
+	return cal.LeapYear != nil && cal.LeapYear.Month == month
 }
 
 // Text writes a text representation of the year.
