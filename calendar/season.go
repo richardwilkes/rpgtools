@@ -31,7 +31,7 @@ func (season *Season) String() string {
 	return fmt.Sprintf("%s (%d/%d-%d/%d)", season.Name, season.StartMonth, season.StartDay, season.EndMonth, season.EndDay)
 }
 
-// Valid returns nil if the month data is usable.
+// Valid returns nil if the season data is usable for the given calendar.
 func (season *Season) Valid(cal *Calendar) error {
 	if season.Name == "" {
 		return errs.New("Calendar season names must not be empty")
