@@ -14,7 +14,6 @@ import (
 	"testing"
 
 	"github.com/richardwilkes/rpgtools/dice"
-	"github.com/richardwilkes/toolbox/xmath/rand"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -54,21 +53,18 @@ func TestCreation(t *testing.T) {
 		{"1d6+8", "3d6+1", 1, 6, 8, 1, false, true},       // 22
 	} {
 		desc := fmt.Sprintf("Table index %d: %s", i, one.Text)
-		d := dice.New(&dice.Config{
-			Randomizer:             rand.NewCryptoRand(),
-			GURPSFormat:            one.GURPS,
-			ExtraDiceFromModifiers: one.ExtraDiceFromModifiers,
-		}, one.Text)
-		assert.Equal(t, one.Expected, d.String(), desc)
+		d := dice.New(one.Text)
+		dice.GURPSFormat = one.GURPS
+		assert.Equal(t, one.Expected, d.StringExtra(one.ExtraDiceFromModifiers), desc)
 		assert.Equal(t, one.Count, d.Count, desc)
 		assert.Equal(t, one.Sides, d.Sides, desc)
 		assert.Equal(t, one.Modifier, d.Modifier, desc)
 		assert.Equal(t, one.Multiplier, d.Multiplier, desc)
 	}
+	dice.GURPSFormat = false
 }
 
 func TestApplyExtraDiceFromModifiersAfter(t *testing.T) {
-	cfg := &dice.Config{Randomizer: rand.NewCryptoRand()}
 	for i, one := range []struct {
 		Text     string
 		Expected string
@@ -82,7 +78,7 @@ func TestApplyExtraDiceFromModifiersAfter(t *testing.T) {
 		{"d6+8", "3d6+1", 3, 1}, // 4
 	} {
 		desc := fmt.Sprintf("Table index %d: %s", i, one.Text)
-		d := dice.New(cfg, one.Text)
+		d := dice.New(one.Text)
 		d.ApplyExtraDiceFromModifiers()
 		assert.Equal(t, one.Expected, d.String(), desc)
 		assert.Equal(t, one.Count, d.Count, desc)

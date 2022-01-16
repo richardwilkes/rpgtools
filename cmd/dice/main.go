@@ -34,7 +34,7 @@ func main() {
 	cl.UsageSuffix = i18n.Text("[dice expression]...")
 	cl.Parse(os.Args[1:])
 	for _, arg := range os.Args[1:] {
-		d := dice.New(nil, arg)
-		fmt.Printf("%v = %s\n", d, humanize.Comma(int64(d.Roll())))
+		d := dice.New(arg)
+		fmt.Printf("%v = %s\n", d, humanize.Comma(int64(d.Roll(false))))
 	}
 }
