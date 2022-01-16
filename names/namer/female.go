@@ -11,8 +11,8 @@ package namer
 
 import "github.com/richardwilkes/rpgtools/names"
 
-// Female is a random name generator for female first names. Created from data
-// obtained from http://www.ssa.gov/oact/babynames/names.zip
+// Female is a random name generator for female first names. Created from data obtained from
+// http://www.ssa.gov/oact/babynames/names.zip
 var Female = (&names.Data{
 	StartsWithVowelFreq:     12795,
 	StartsWithConsonantFreq: 52863,

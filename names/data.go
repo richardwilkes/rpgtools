@@ -34,9 +34,8 @@ const (
 	ArraySize         = EndingConsonant + 1
 )
 
-// Data holds the data necessary to create a random name generator.
-// If persistence is desired, this is the data that should be recorded. The
-// codegen package can turn this into Go code.
+// Data holds the data necessary to create a random name generator. If persistence is desired, this is the data that
+// should be recorded.
 type Data struct {
 	StartsWithVowelFreq     int                  `json:"starts_with_vowel_freq" yaml:"starts_with_vowel_freq"`
 	StartsWithConsonantFreq int                  `json:"starts_with_consonant_freq" yaml:"starts_with_consonant_freq"`

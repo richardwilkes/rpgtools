@@ -9,10 +9,9 @@
 
 package calendar
 
-// Gregorian returns a new calendar which mimics the Gregorian calendar,
-// although not precisely, as the real-world calendar has a lot of
-// irregularities to it prior to the 1600's. If you want a more precise
-// real-world calendar, use Go's time.Time instead.
+// Gregorian returns a new calendar which mimics the Gregorian calendar, although not precisely, as the real-world
+// calendar has a lot of irregularities to it prior to the 1600's. If you want a more precise real-world calendar, use
+// Go's time.Time instead.
 func Gregorian() *Calendar {
 	return &Calendar{
 		DayZeroWeekDay: 1,

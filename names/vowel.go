@@ -9,8 +9,7 @@
 
 package names
 
-// VowelChecker defines a function that returns true if the specified rune is
-// to be considered a vowel.
+// VowelChecker defines a function that returns true if the specified rune is to be considered a vowel.
 type VowelChecker func(rune) bool
 
 // IsVowel is a concrete implementation of VowelChecker.

@@ -11,8 +11,8 @@ package namer
 
 import "github.com/richardwilkes/rpgtools/names"
 
-// Male is a random name generator for male first names. Created from data
-// obtained from http://www.ssa.gov/oact/babynames/names.zip
+// Male is a random name generator for male first names. Created from data obtained from
+// http://www.ssa.gov/oact/babynames/names.zip
 var Male = (&names.Data{
 	StartsWithVowelFreq:     7008,
 	StartsWithConsonantFreq: 32720,

@@ -11,8 +11,8 @@ package namer
 
 import "github.com/richardwilkes/rpgtools/names"
 
-// Last is a random name generator for last names. Created from data obtained
-// from https://www.census.gov/genealogy/www/data/2000surnames/names.zip
+// Last is a random name generator for last names. Created from data obtained from
+// https://www.census.gov/genealogy/www/data/2000surnames/names.zip
 var Last = (&names.Data{
 	StartsWithVowelFreq:     16021,
 	StartsWithConsonantFreq: 146233,

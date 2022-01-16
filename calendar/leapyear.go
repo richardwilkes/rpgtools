@@ -68,8 +68,7 @@ func (leapYear *LeapYear) Is(year int) bool {
 	return false
 }
 
-// Since returns the number of leap years that have occurred between year 1
-// and the specified year, exclusive.
+// Since returns the number of leap years that have occurred between year 1 and the specified year, exclusive.
 func (leapYear *LeapYear) Since(year int) int {
 	if year == -1 {
 		return 0

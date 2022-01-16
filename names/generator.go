@@ -25,11 +25,9 @@ type Generator struct {
 	segmentsTotalFreq [ArraySize]int
 }
 
-// NewFromSamples uses the provided sample names to produce a new random name
-// generator. Each sample should be a single word. 'vowelChecker' may be nil,
-// in which case IsVowely() will be used. After processing all of the samples,
-// any segments that don't meet the 'minimumFrequency' parameter will be
-// pruned.
+// NewFromSamples uses the provided sample names to produce a new random name generator. Each sample should be a single
+// word. 'vowelChecker' may be nil, in which case IsVowely() will be used. After processing all of the samples, any
+// segments that don't meet the 'minimumFrequency' parameter will be pruned.
 func NewFromSamples(samples []string, minimumFrequency int, vowelChecker VowelChecker) *Generator {
 	if vowelChecker == nil {
 		vowelChecker = IsVowely

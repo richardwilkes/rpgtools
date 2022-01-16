@@ -22,8 +22,7 @@ import (
 )
 
 var (
-	// Default is the default calendar that will be used by Date.UnmarshalText()
-	// if the date was not initialized.
+	// Default is the default calendar that will be used by Date.UnmarshalText() if the date was not initialized.
 	Default = Gregorian()
 	// "9/22/2017" or "9/22/2017 AD"
 	regexMMDDYYY = regexp.MustCompile("([[:digit:]]+)/([[:digit:]]+)/(-?[[:digit:]]+) *([[:alpha:]]+)?")
@@ -79,8 +78,7 @@ func (cal *Calendar) Valid() error {
 	return nil
 }
 
-// MustNewDate creates a new date from the specified month, day and year.
-// Panics if the values are invalid.
+// MustNewDate creates a new date from the specified month, day and year. Panics if the values are invalid.
 func (cal *Calendar) MustNewDate(month, day, year int) Date {
 	date, err := cal.NewDate(month, day, year)
 	if err != nil {
@@ -114,8 +112,7 @@ func (cal *Calendar) NewDate(month, day, year int) (Date, error) {
 	return Date{Days: days, cal: cal}, nil
 }
 
-// NewDateByDays creates a new date from a number of days, with 0 representing
-// the date 1/1/1.
+// NewDateByDays creates a new date from a number of days, with 0 representing the date 1/1/1.
 func (cal *Calendar) NewDateByDays(days int) Date {
 	return Date{Days: days, cal: cal}
 }

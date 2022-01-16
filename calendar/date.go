@@ -25,9 +25,8 @@ const (
 	ShortFormat  = "%N/%D/%Y"
 )
 
-// Date holds a calendar date. This is the number of days since 1/1/1 in the
-// calendar. Note that the value -1 refers to the last day of the year -1, not
-// year 0, as there is no year 0.
+// Date holds a calendar date. This is the number of days since 1/1/1 in the calendar. Note that the value -1 refers to
+// the last day of the year -1, not year 0, as there is no year 0.
 type Date struct {
 	Days int
 	cal  *Calendar
@@ -50,8 +49,7 @@ func (date Date) Year() int {
 	return estimate
 }
 
-// Month returns the month of the date. Note that the first month is
-// represented by 1, not 0.
+// Month returns the month of the date. Note that the first month is represented by 1, not 0.
 func (date Date) Month() int {
 	isLeapYear := date.cal.IsLeapYear(date.Year())
 	days := date.DayInYear()
@@ -74,14 +72,12 @@ func (date Date) MonthName() string {
 	return date.cal.Months[date.Month()-1].Name
 }
 
-// DayInYear returns the day within the year of the date. Note that the first
-// day is represented by a 1, not 0.
+// DayInYear returns the day within the year of the date. Note that the first day is represented by a 1, not 0.
 func (date Date) DayInYear() int {
 	return 1 + date.Days - date.cal.yearToDays(date.Year())
 }
 
-// DayInMonth returns the day within the month of the date. Note that the
-// first day is represented by a 1, not 0.
+// DayInMonth returns the day within the month of the date. Note that the first day is represented by a 1, not 0.
 func (date Date) DayInMonth() int {
 	isLeapYear := date.cal.IsLeapYear(date.Year())
 	days := date.DayInYear()
@@ -131,12 +127,12 @@ func (date Date) String() string {
 	return date.Format(ShortFormat)
 }
 
-// MarshalText implements the encoding.TextMarshaler interface.
+// MarshalText implements encoding.TextMarshaler.
 func (date Date) MarshalText() ([]byte, error) {
 	return []byte(date.String()), nil
 }
 
-// UnmarshalText implements the encoding.TextUnmarshaler interface.
+// UnmarshalText implements encoding.TextUnmarshaler.
 func (date *Date) UnmarshalText(text []byte) error {
 	cal := date.cal
 	if cal == nil {
@@ -150,17 +146,15 @@ func (date *Date) UnmarshalText(text []byte) error {
 	return nil
 }
 
-// Format returns a formatted version of the date. The layout is parsed as in
-// WriteFormat().
+// Format returns a formatted version of the date. The layout is parsed as in WriteFormat().
 func (date Date) Format(layout string) string {
 	var buffer strings.Builder
 	date.WriteFormat(&buffer, layout)
 	return buffer.String()
 }
 
-// WriteFormat writes a formatted version of the date to the writer. The
-// layout is parsed for directives and anything that is not a directive is
-// passed through unchanged. Valid directives:
+// WriteFormat writes a formatted version of the date to the writer. The layout is parsed for directives and anything
+// that is not a directive is passed through unchanged. Valid directives:
 //
 //   %W  Full weekday, e.g. 'Friday'
 //   %w  Short weekday, e.g. 'Fri'
@@ -170,11 +164,10 @@ func (date Date) Format(layout string) string {
 //   %n  Month padded with zeroes, e.g. '09'
 //   %D  Day, e.g. '2'
 //   %d  Day padded with zeroes, e.g. '02'
-//   %Y  Year, e.g. '2017' if positive, '2017 BC' if negative; however, if the
-//       eras aren't empty and match each other, then this will behave the
-//       same as %y
-//   %y  Year with era, e.g. '2017 AD'; however, if the eras are empty or they
-//       match each other, then negative years will result in '-2017 AD'
+//   %Y  Year, e.g. '2017' if positive, '2017 BC' if negative; however, if the eras aren't empty and match each other,
+//       then this will behave the same as %y
+//   %y  Year with era, e.g. '2017 AD'; however, if the eras are empty or they match each other, then negative years
+//       will result in '-2017 AD'
 //   %z  Year without the era, e.g. '2017' or '-2017'
 //   %%  %
 func (date Date) WriteFormat(w io.Writer, layout string) {
