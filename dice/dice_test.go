@@ -51,9 +51,9 @@ func TestCreation(t *testing.T) {
 		{"1d6+4", "2d6", 1, 6, 4, 1, false, true},         // 20
 		{"1d6+5", "2d6+1", 1, 6, 5, 1, false, true},       // 21
 		{"1d6+8", "3d6+1", 1, 6, 8, 1, false, true},       // 22
-		{"-2", "-2", 0, 0, -2, 1, false, false},           // 23
-		{"+2", "+2", 0, 0, +2, 1, false, false},           // 23
-		{"x2", "0x2", 0, 0, 0, 2, false, false},           // 23
+		{"-1", "-1", 0, 0, -1, 1, false, false},           // 23
+		{"+2", "+2", 0, 0, +2, 1, false, false},           // 24
+		{"x2", "0x2", 0, 0, 0, 2, false, false},           // 25
 	} {
 		desc := fmt.Sprintf("Table index %d: %s", i, one.Text)
 		d := dice.New(one.Text)
