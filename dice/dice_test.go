@@ -31,12 +31,12 @@ func TestCreation(t *testing.T) {
 		{" 1d6+2x3 ", "d6+2x3", 1, 6, 2, 3, false, false}, // 0
 		{"1d6", "d6", 1, 6, 0, 1, false, false},           // 1
 		{"1d6", "1d", 1, 6, 0, 1, true, false},            // 2
-		{"d", "d6", 1, 6, 0, 1, false, false},             // 3
+		{"d", "0", 0, 0, 0, 1, false, false},              // 3
 		{"d8", "d8", 1, 8, 0, 1, false, false},            // 4
 		{"2d", "2d6", 2, 6, 0, 1, false, false},           // 5
 		{"2d4x2", "2d4x2", 2, 4, 0, 2, false, false},      // 6
 		{"3d5+1", "3d5+1", 3, 5, 1, 1, false, false},      // 7
-		{"abcd", "d6", 1, 6, 0, 1, false, false},          // 8
+		{"abcd", "0", 0, 0, 0, 1, false, false},           // 8
 		{"1d6+2x3", "d6+2x3", 1, 6, 2, 3, false, false},   // 9
 		{"3d8-13", "3d8-13", 3, 8, -13, 1, false, false},  // 10
 		{"3d8+13", "3d8+13", 3, 8, 13, 1, false, false},   // 11
@@ -51,6 +51,9 @@ func TestCreation(t *testing.T) {
 		{"1d6+4", "2d6", 1, 6, 4, 1, false, true},         // 20
 		{"1d6+5", "2d6+1", 1, 6, 5, 1, false, true},       // 21
 		{"1d6+8", "3d6+1", 1, 6, 8, 1, false, true},       // 22
+		{"-2", "-2", 0, 0, -2, 1, false, false},           // 23
+		{"+2", "+2", 0, 0, +2, 1, false, false},           // 23
+		{"x2", "0x2", 0, 0, 0, 2, false, false},           // 23
 	} {
 		desc := fmt.Sprintf("Table index %d: %s", i, one.Text)
 		d := dice.New(one.Text)
@@ -88,28 +91,21 @@ func TestApplyExtraDiceFromModifiersAfter(t *testing.T) {
 
 func TestExtractFirstPosition(t *testing.T) {
 	for i, one := range []struct {
-		Text string
-		Pos  []int
+		Text  string
+		Start int
+		End   int
 	}{
-		{"roll 3d6 for me", []int{5, 8}},            // 0
-		{"d not for me, roll 2d6+2", []int{19, 24}}, // 1
-		{"roll d6x2", []int{5, 9}},                  // 2
-		{"roll 3dx2", []int{5, 9}},                  // 3
-		{"Just text", []int(nil)},                   // 4
+		{"d6", 0, 2},                         // 0
+		{"roll 3d6 for me", 5, 8},            // 1
+		{"d not for me, roll 2d6+2", 19, 24}, // 2
+		{"roll d6x2", 5, 9},                  // 3
+		{"roll 3dx2", 5, 9},                  // 4
+		{"Just text", -1, -1},                // 5
+		{"and two years later...", -1, -1},   // 6
+		{"and 13 years later...", -1, -1},    // 7
 	} {
-		assert.Equal(t, one.Pos, dice.ExtractFirstPosition(one.Text), fmt.Sprintf("Table index %d: %s", i, one.Text))
-	}
-}
-
-func TestExtractAllPositions(t *testing.T) {
-	for i, one := range []struct {
-		Text string
-		Pos  [][]int
-	}{
-		{"roll 1d5 then 5d8", [][]int{{5, 8}, {14, 17}}},                // 0
-		{"roll 2d4, 3d6+1x2, 4d8", [][]int{{5, 8}, {10, 17}, {19, 22}}}, // 1
-		{"Just text", [][]int(nil)},                                     // 2
-	} {
-		assert.Equal(t, one.Pos, dice.ExtractAllPositions(one.Text, -1), fmt.Sprintf("Table index %d: %s", i, one.Text))
+		start, end := dice.ExtractDicePosition(one.Text)
+		assert.Equal(t, one.Start, start, fmt.Sprintf("Table index %d: %s", i, one.Text))
+		assert.Equal(t, one.End, end, fmt.Sprintf("Table index %d: %s", i, one.Text))
 	}
 }

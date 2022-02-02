@@ -13,22 +13,16 @@ package dice
 import (
 	"bytes"
 	"math"
-	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/richardwilkes/toolbox/xmath/rand"
 )
 
-const diceRegexStr = `(((\d+)?[dD](\d+))|((\d+)[dD](\d+)?)){1}([-+]\d+)?([xX](\d+))?`
-
-var (
-	// GURPSFormat determines whether GURPS dice formatting should be used. A value of true means the die count is
-	// always shown and the sides value is suppressed if it is a '6', while a value of false means the die count is
-	// suppressed if it is a '1' and the sides value is always shown.
-	GURPSFormat   = false
-	diceRegex     = regexp.MustCompile(diceRegexStr)
-	diceRegexOnly = regexp.MustCompile(`^\s*` + diceRegexStr + `\s*$`)
-)
+// GURPSFormat determines whether GURPS dice formatting should be used. A value of true means the die count is always
+// shown and the sides value is suppressed if it is a '6', while a value of false means the die count is suppressed if
+// it is a '1' and the sides value is always shown.
+var GURPSFormat = false
 
 // Dice holds the dice information.
 type Dice struct {
@@ -45,28 +39,133 @@ func Roll(spec string, extraDiceFromModifiers bool) int {
 
 // New creates a new Dice based on the given spec.
 func New(spec string) *Dice {
-	dice := &Dice{}
-	match := diceRegexOnly.FindStringSubmatch(spec)
-	if match != nil {
-		if match[2] != "" {
-			dice.Count = atoi(match[3])
-			dice.Sides = atoi(match[4])
-		} else {
-			dice.Count = atoi(match[6])
-			dice.Sides = atoi(match[7])
+	spec = strings.TrimSpace(spec)
+	var dice Dice
+	var i int
+	var ch byte
+	dice.Count, i = extractValue(spec, 0)
+	hadCount := i != 0
+	ch, i = nextChar(spec, i)
+	hadSides := false
+	if ch == 'd' || ch == 'D' {
+		j := i
+		dice.Sides, i = extractValue(spec, i)
+		hadSides = i != j
+		ch, i = nextChar(spec, i)
+	}
+	if hadSides && !hadCount {
+		dice.Count = 1
+	} else if !hadSides && hadCount {
+		dice.Sides = 6
+	}
+	if ch == '+' || ch == '-' {
+		neg := ch == '-'
+		dice.Modifier, i = extractValue(spec, i)
+		if neg {
+			dice.Modifier = -dice.Modifier
 		}
-		dice.Modifier = atoi(match[8])
-		dice.Multiplier = atoi(match[10])
+		ch, i = nextChar(spec, i)
+	}
+	if ch == 'x' || ch == 'X' {
+		dice.Multiplier, _ = extractValue(spec, i)
+	}
+	if dice.Multiplier == 0 {
+		dice.Multiplier = 1
 	}
 	dice.Normalize()
-	return dice
+	return &dice
 }
 
-func atoi(text string) int {
-	if value, err := strconv.Atoi(text); err == nil {
-		return value
+func nextChar(in string, inPos int) (ch byte, outPos int) {
+	if inPos < len(in) {
+		return in[inPos], inPos + 1
 	}
-	return 0
+	return 0, inPos
+}
+
+func extractValue(in string, inPos int) (value, outPos int) {
+	for inPos < len(in) {
+		ch := in[inPos]
+		if ch < '0' || ch > '9' {
+			return value, inPos
+		}
+		value *= 10
+		value += int(ch - '0')
+		inPos++
+	}
+	return value, inPos
+}
+
+// ExtractDicePosition returns the start (inclusive) and end (exclusive) index of the Dice specification. If none can be found, -1, -1 will be returned.
+func ExtractDicePosition(text string) (start, end int) {
+	start = -1
+	state := 0
+	foundDigit := false
+	max := len(text)
+	for i, ch := range text {
+		switch state {
+		case 0: // Look for a leading number (with or without a sign) or a 'd'
+			switch {
+			case ch >= '0' && ch <= '9':
+				foundDigit = true
+				if start == -1 {
+					start = i
+				}
+			case ch == 'd' || ch == 'D':
+				if start == -1 {
+					start = i
+				}
+				state = 1
+			case ch == '+' || ch == '-':
+				state = 2
+			default:
+				foundDigit = false
+				start = -1
+			}
+		case 1: // Got 'd', but may not have found a digit yet; allow digits, sign or 'x'
+			switch {
+			case ch >= '0' && ch <= '9':
+				foundDigit = true
+			case !foundDigit:
+				start = -1
+				state = 0
+			case ch == '+' || ch == '-':
+				state = 2
+			case ch == 'x' || ch == 'X':
+				state = 3
+			default:
+				state = 4
+			}
+		case 2: // Found a sign; allow digits or 'x'
+			if ch != ' ' && (ch < '0' || ch > '9') {
+				if ch == 'x' || ch == 'X' {
+					state = 3
+				} else {
+					state = 4
+				}
+			}
+		case 3: // Found an 'x'; allow digits
+			if ch != ' ' && (ch < '0' || ch > '9') {
+				state = 4
+			}
+		}
+		if state == 4 {
+			max = i
+			break
+		}
+	}
+	if start != -1 {
+		for start < max && text[start] == ' ' {
+			start++
+		}
+		for max > start && text[max-1] == ' ' {
+			max--
+		}
+		if start < max {
+			return start, max
+		}
+	}
+	return -1, -1
 }
 
 // Minimum returns the minimum result. 'extraDiceFromModifiers' determines if modifiers greater than or equal to the
@@ -74,7 +173,9 @@ func atoi(text string) int {
 // will become 3d6+1.
 func (dice *Dice) Minimum(extraDiceFromModifiers bool) int {
 	count, result := dice.adjustedCountAndModifier(extraDiceFromModifiers)
-	result += count
+	if dice.Sides > 0 {
+		result += count
+	}
 	return result * dice.Multiplier
 }
 
@@ -83,7 +184,9 @@ func (dice *Dice) Minimum(extraDiceFromModifiers bool) int {
 // will become 3d6+1.
 func (dice *Dice) Average(extraDiceFromModifiers bool) int {
 	count, result := dice.adjustedCountAndModifier(extraDiceFromModifiers)
-	result += count * (dice.Sides + 1) / 2
+	if count > 0 && dice.Sides > 0 {
+		result += count * (dice.Sides + 1) / 2
+	}
 	return result * dice.Multiplier
 }
 
@@ -111,8 +214,13 @@ func (dice *Dice) RollWithRandomizer(rnd rand.Randomizer, extraDiceFromModifiers
 	if rnd == nil {
 		rnd = rand.NewCryptoRand()
 	}
-	for i := 0; i < count; i++ {
-		result += 1 + rnd.Intn(dice.Sides)
+	switch {
+	case dice.Sides > 1:
+		for i := 0; i < count; i++ {
+			result += 1 + rnd.Intn(dice.Sides)
+		}
+	case dice.Sides == 1:
+		result = count
 	}
 	return result * dice.Multiplier
 }
@@ -142,12 +250,12 @@ func (dice *Dice) StringExtra(extraDiceFromModifiers bool) string {
 	} else if modifier < 0 {
 		buffer.WriteString(strconv.Itoa(modifier))
 	}
+	if buffer.Len() == 0 {
+		buffer.WriteString("0")
+	}
 	if dice.Multiplier != 1 {
 		buffer.WriteString("x")
 		buffer.WriteString(strconv.Itoa(dice.Multiplier))
-	}
-	if buffer.Len() == 0 {
-		buffer.WriteString("0")
 	}
 	return buffer.String()
 }
@@ -160,6 +268,9 @@ func (dice *Dice) ApplyExtraDiceFromModifiers() {
 
 func (dice *Dice) adjustedCountAndModifier(applyExtractDiceFromModifiers bool) (count, modifier int) {
 	dice.Normalize()
+	if dice.Sides == 0 {
+		return dice.Count, dice.Modifier
+	}
 	count = dice.Count
 	modifier = dice.Modifier
 	if applyExtractDiceFromModifiers && modifier > 0 {
@@ -190,11 +301,11 @@ func (dice *Dice) adjustedCountAndModifier(applyExtractDiceFromModifiers bool) (
 
 // Normalize the internal state.
 func (dice *Dice) Normalize() {
-	if dice.Count < 1 {
-		dice.Count = 1
+	if dice.Count < 0 {
+		dice.Count = 0
 	}
-	if dice.Sides < 1 {
-		dice.Sides = 6
+	if dice.Sides < 0 {
+		dice.Sides = 0
 	}
 	if dice.Multiplier < 1 {
 		dice.Multiplier = 1
@@ -226,20 +337,4 @@ func (dice *Dice) PoolProbability(target int) float64 {
 		return 0
 	}
 	return 1 - math.Pow(1-float64(1+dice.Sides-target)/float64(dice.Sides), float64(dice.Count))
-}
-
-// ExtractFirstPosition returns a two-element slice of integers defining the location of the first Dice specification in
-// the input text it finds. The match itself is at text[loc[0]:loc[1]]. A return value of nil indicates no match was
-// found.
-func ExtractFirstPosition(text string) []int {
-	return diceRegex.FindStringIndex(text)
-}
-
-// ExtractAllPositions is similar to ExtractFirstPosition, except it returns a slice of up to max matches. If max is
-// less than 1, then all matches will be returned. A return value of nil indicates no matches were found.
-func ExtractAllPositions(text string, max int) [][]int {
-	if max < 1 {
-		max = -1
-	}
-	return diceRegex.FindAllStringIndex(text, max)
 }
