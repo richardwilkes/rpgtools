@@ -47,7 +47,9 @@ func New(spec string) *Dice {
 	hadCount := i != 0
 	ch, i = nextChar(spec, i)
 	hadSides := false
+	hadD := false
 	if ch == 'd' || ch == 'D' {
+		hadD = true
 		j := i
 		dice.Sides, i = extractValue(spec, i)
 		hadSides = i != j
@@ -55,7 +57,7 @@ func New(spec string) *Dice {
 	}
 	if hadSides && !hadCount {
 		dice.Count = 1
-	} else if !hadSides && hadCount {
+	} else if hadD && !hadSides && hadCount {
 		dice.Sides = 6
 	}
 	if ch == '+' || ch == '-' {
@@ -65,6 +67,10 @@ func New(spec string) *Dice {
 			dice.Modifier = -dice.Modifier
 		}
 		ch, i = nextChar(spec, i)
+	}
+	if !hadD {
+		dice.Modifier += dice.Count
+		dice.Count = 0
 	}
 	if ch == 'x' || ch == 'X' {
 		dice.Multiplier, _ = extractValue(spec, i)
@@ -245,7 +251,9 @@ func (dice *Dice) StringExtra(extraDiceFromModifiers bool) string {
 		}
 	}
 	if modifier > 0 {
-		buffer.WriteString("+")
+		if count != 0 && dice.Sides != 0 {
+			buffer.WriteString("+")
+		}
 		buffer.WriteString(strconv.Itoa(modifier))
 	} else if modifier < 0 {
 		buffer.WriteString(strconv.Itoa(modifier))

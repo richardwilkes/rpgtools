@@ -52,8 +52,9 @@ func TestCreation(t *testing.T) {
 		{"1d6+5", "2d6+1", 1, 6, 5, 1, false, true},       // 21
 		{"1d6+8", "3d6+1", 1, 6, 8, 1, false, true},       // 22
 		{"-1", "-1", 0, 0, -1, 1, false, false},           // 23
-		{"+2", "+2", 0, 0, +2, 1, false, false},           // 24
-		{"x2", "0x2", 0, 0, 0, 2, false, false},           // 25
+		{"+2", "2", 0, 0, 2, 1, false, false},             // 24
+		{"x3", "0x3", 0, 0, 0, 3, false, false},           // 25
+		{"4", "4", 0, 0, 4, 1, false, false},              // 26
 	} {
 		desc := fmt.Sprintf("Table index %d: %s", i, one.Text)
 		d := dice.New(one.Text)
@@ -103,6 +104,8 @@ func TestExtractFirstPosition(t *testing.T) {
 		{"Just text", -1, -1},                // 5
 		{"and two years later...", -1, -1},   // 6
 		{"and 13 years later...", -1, -1},    // 7
+		{"and +13 years later...", -1, -1},   // 7
+		{"and -13 years later...", -1, -1},   // 7
 	} {
 		start, end := dice.ExtractDicePosition(one.Text)
 		assert.Equal(t, one.Start, start, fmt.Sprintf("Table index %d: %s", i, one.Text))
