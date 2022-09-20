@@ -156,20 +156,20 @@ func (date Date) Format(layout string) string {
 // WriteFormat writes a formatted version of the date to the writer. The layout is parsed for directives and anything
 // that is not a directive is passed through unchanged. Valid directives:
 //
-//   %W  Full weekday, e.g. 'Friday'
-//   %w  Short weekday, e.g. 'Fri'
-//   %M  Full month name, e.g. 'September'
-//   %m  Short month name, e.g. 'Sep'
-//   %N  Month, e.g. '9'
-//   %n  Month padded with zeroes, e.g. '09'
-//   %D  Day, e.g. '2'
-//   %d  Day padded with zeroes, e.g. '02'
-//   %Y  Year, e.g. '2017' if positive, '2017 BC' if negative; however, if the eras aren't empty and match each other,
-//       then this will behave the same as %y
-//   %y  Year with era, e.g. '2017 AD'; however, if the eras are empty or they match each other, then negative years
-//       will result in '-2017 AD'
-//   %z  Year without the era, e.g. '2017' or '-2017'
-//   %%  %
+//	%W  Full weekday, e.g. 'Friday'
+//	%w  Short weekday, e.g. 'Fri'
+//	%M  Full month name, e.g. 'September'
+//	%m  Short month name, e.g. 'Sep'
+//	%N  Month, e.g. '9'
+//	%n  Month padded with zeroes, e.g. '09'
+//	%D  Day, e.g. '2'
+//	%d  Day padded with zeroes, e.g. '02'
+//	%Y  Year, e.g. '2017' if positive, '2017 BC' if negative; however, if the eras aren't empty and match each other,
+//	    then this will behave the same as %y
+//	%y  Year with era, e.g. '2017 AD'; however, if the eras are empty or they match each other, then negative years
+//	    will result in '-2017 AD'
+//	%z  Year without the era, e.g. '2017' or '-2017'
+//	%%  %
 func (date Date) WriteFormat(w io.Writer, layout string) {
 	cmd := false
 	for _, r := range layout {
