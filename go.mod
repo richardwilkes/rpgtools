@@ -4,7 +4,7 @@ go 1.20
 
 require (
 	github.com/dustin/go-humanize v1.0.1
-	github.com/richardwilkes/toolbox v1.83.1
+	github.com/richardwilkes/toolbox v1.84.0
 	github.com/stretchr/testify v1.8.2
 	gopkg.in/yaml.v3 v3.0.1
 )
