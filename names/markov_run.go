@@ -68,7 +68,7 @@ func (n *MarkovRunNamer) add(name string, count int, mapping map[string]map[stri
 			m = make(map[string]int)
 			mapping[last] = m
 		}
-		m[next]++
+		m[next] += count
 		last = next
 	}
 	n.final[last] = struct{}{}
