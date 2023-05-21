@@ -3,7 +3,7 @@ module github.com/richardwilkes/rpgtools
 go 1.20
 
 require (
-	github.com/richardwilkes/toolbox v1.84.0
+	github.com/richardwilkes/toolbox v1.85.0
 	github.com/stretchr/testify v1.8.3
 	golang.org/x/exp v0.0.0-20230519143937-03e91628a987
 	gopkg.in/yaml.v3 v3.0.1
