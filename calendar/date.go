@@ -97,7 +97,12 @@ func (date Date) DayInMonth() int {
 
 // DaysInMonth returns the number of days in the month of the date.
 func (date Date) DaysInMonth() int {
-	return date.cal.Months[date.Month()-1].Days
+	month := date.Month()
+	days := date.cal.Months[month-1].Days
+	if date.cal.IsLeapYear(date.Year()) && date.cal.IsLeapMonth(month) {
+		days++
+	}
+	return days
 }
 
 // WeekDay returns the weekday of the date.
