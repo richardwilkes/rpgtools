@@ -110,7 +110,7 @@ func newSeasons() []calendar.Season {
 	return []calendar.Season{
 		{
 			Name:       "Winter",
-			StartMonth: 12,
+			StartMonth: 11,
 			StartDay:   1,
 			EndMonth:   2,
 			EndDay:     28,
