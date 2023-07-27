@@ -42,9 +42,7 @@ func NewSimpleNamer(data map[string]int) *SimpleNamer {
 			}
 		}
 	}
-	slices.SortFunc(n.data, func(a, b nameCount) bool {
-		return txt.NaturalLess(a.name, b.name, false)
-	})
+	slices.SortFunc(n.data, func(a, b nameCount) int { return txt.NaturalCmp(a.name, b.name, false) })
 	return &n
 }
 
@@ -57,9 +55,7 @@ func NewSimpleUnweightedNamer(data []string) *SimpleNamer {
 			n.total++
 		}
 	}
-	slices.SortFunc(n.data, func(a, b nameCount) bool {
-		return txt.NaturalLess(a.name, b.name, false)
-	})
+	slices.SortFunc(n.data, func(a, b nameCount) int { return txt.NaturalCmp(a.name, b.name, false) })
 	return &n
 }
 
