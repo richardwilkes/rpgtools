@@ -267,11 +267,11 @@ func (date Date) TextCalendarMonth(w io.Writer) {
 		}
 		fmt.Fprint(w, weekday[:1])
 	}
-	max := date.DaysInMonth()
+	maximum := date.DaysInMonth()
 	year := date.Year()
 	month := date.Month()
 	numFmt := fmt.Sprintf("%%%dd", width)
-	for i := 1; i <= max; i++ {
+	for i := 1; i <= maximum; i++ {
 		d := date.cal.MustNewDate(month, i, year)
 		weekDay := d.WeekDay()
 		if i == 1 || weekDay == 0 {

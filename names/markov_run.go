@@ -137,7 +137,7 @@ func (n *MarkovRunNamer) GenerateName() string {
 // GenerateNameWithRandomizer generates a new random name using the specified randomizer.
 func (n *MarkovRunNamer) GenerateNameWithRandomizer(rnd rand.Randomizer) string {
 	var buffer strings.Builder
-	max := selectMax(n.lengths, rnd)
+	maximum := selectMax(n.lengths, rnd)
 	last := ""
 	for {
 		m, ok := n.mapping[last]
@@ -150,7 +150,7 @@ func (n *MarkovRunNamer) GenerateNameWithRandomizer(rnd rand.Randomizer) string 
 		}
 		last = next
 		buffer.WriteString(next)
-		if buffer.Len() >= max {
+		if buffer.Len() >= maximum {
 			if _, final := n.final[next]; final {
 				break
 			}

@@ -119,7 +119,7 @@ func (n *MarkovLetterNamer) GenerateName() string {
 // GenerateNameWithRandomizer generates a new random name using the specified randomizer.
 func (n *MarkovLetterNamer) GenerateNameWithRandomizer(rnd rand.Randomizer) string {
 	var buffer strings.Builder
-	max := selectMax(n.lengths, rnd)
+	maximum := selectMax(n.lengths, rnd)
 	ch := make([]rune, n.depth)
 	for {
 		m, ok := n.mapping[string(ch)]
@@ -135,7 +135,7 @@ func (n *MarkovLetterNamer) GenerateNameWithRandomizer(rnd rand.Randomizer) stri
 		}
 		ch[n.depth-1] = next
 		buffer.WriteRune(next)
-		if buffer.Len() >= max {
+		if buffer.Len() >= maximum {
 			if _, final := n.final[next]; final {
 				break
 			}
@@ -155,9 +155,9 @@ func computeLengths(lengths map[int]int) [][2]int {
 }
 
 func selectMax(lengths [][2]int, rnd rand.Randomizer) int {
-	max := rnd.Intn(lengths[len(lengths)-1][1])
+	maximum := rnd.Intn(lengths[len(lengths)-1][1])
 	for _, p := range lengths {
-		if p[1] >= max {
+		if p[1] >= maximum {
 			return p[0]
 		}
 	}

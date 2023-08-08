@@ -10,11 +10,11 @@
 package names
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/richardwilkes/toolbox/txt"
 	"github.com/richardwilkes/toolbox/xmath/rand"
-	"golang.org/x/exp/slices"
 )
 
 var _ Namer = &SimpleNamer{}

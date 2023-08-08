@@ -107,7 +107,7 @@ func ExtractDicePosition(text string) (start, end int) {
 	start = -1
 	state := 0
 	foundDigit := false
-	max := len(text)
+	maximum := len(text)
 	for i, ch := range text {
 		switch state {
 		case 0: // Look for a leading number (with or without a sign) or a 'd'
@@ -156,19 +156,19 @@ func ExtractDicePosition(text string) (start, end int) {
 			}
 		}
 		if state == 4 {
-			max = i
+			maximum = i
 			break
 		}
 	}
 	if start != -1 {
-		for start < max && text[start] == ' ' {
+		for start < maximum && text[start] == ' ' {
 			start++
 		}
-		for max > start && text[max-1] == ' ' {
-			max--
+		for maximum > start && text[maximum-1] == ' ' {
+			maximum--
 		}
-		if start < max {
-			return start, max
+		if start < maximum {
+			return start, maximum
 		}
 	}
 	return -1, -1
