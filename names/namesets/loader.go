@@ -16,14 +16,14 @@ import (
 	"strings"
 
 	"github.com/richardwilkes/toolbox/errs"
-	"github.com/richardwilkes/toolbox/log/jot"
+	"github.com/richardwilkes/toolbox/fatal"
 )
 
 // MustLoadFromReader loads a name set from the provided reader. The data should consist of lines of text, each of which
 // contains a name and a count, separated by a comma.
 func MustLoadFromReader(r io.Reader) map[string]int {
 	m, err := LoadFromReader(r)
-	jot.FatalIfErr(err)
+	fatal.IfErr(err)
 	return m
 }
 

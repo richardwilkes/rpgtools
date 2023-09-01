@@ -1,4 +1,4 @@
-// Copyright ©2017-2022 by Richard A. Wilkes. All rights reserved.
+// Copyright ©2017-2023 by Richard A. Wilkes. All rights reserved.
 //
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, version 2.0. If a copy of the MPL was not distributed with
@@ -14,7 +14,7 @@ import (
 	"testing"
 
 	"github.com/richardwilkes/rpgtools/dice"
-	"github.com/stretchr/testify/assert"
+	"github.com/richardwilkes/toolbox/check"
 )
 
 func TestCreation(t *testing.T) {
@@ -59,11 +59,11 @@ func TestCreation(t *testing.T) {
 		desc := fmt.Sprintf("Table index %d: %s", i, one.Text)
 		d := dice.New(one.Text)
 		dice.GURPSFormat = one.GURPS
-		assert.Equal(t, one.Expected, d.StringExtra(one.ExtraDiceFromModifiers), desc)
-		assert.Equal(t, one.Count, d.Count, desc)
-		assert.Equal(t, one.Sides, d.Sides, desc)
-		assert.Equal(t, one.Modifier, d.Modifier, desc)
-		assert.Equal(t, one.Multiplier, d.Multiplier, desc)
+		check.Equal(t, one.Expected, d.StringExtra(one.ExtraDiceFromModifiers), desc)
+		check.Equal(t, one.Count, d.Count, desc)
+		check.Equal(t, one.Sides, d.Sides, desc)
+		check.Equal(t, one.Modifier, d.Modifier, desc)
+		check.Equal(t, one.Multiplier, d.Multiplier, desc)
 	}
 	dice.GURPSFormat = false
 }
@@ -84,9 +84,9 @@ func TestApplyExtraDiceFromModifiersAfter(t *testing.T) {
 		desc := fmt.Sprintf("Table index %d: %s", i, one.Text)
 		d := dice.New(one.Text)
 		d.ApplyExtraDiceFromModifiers()
-		assert.Equal(t, one.Expected, d.String(), desc)
-		assert.Equal(t, one.Count, d.Count, desc)
-		assert.Equal(t, one.Modifier, d.Modifier, desc)
+		check.Equal(t, one.Expected, d.String(), desc)
+		check.Equal(t, one.Count, d.Count, desc)
+		check.Equal(t, one.Modifier, d.Modifier, desc)
 	}
 }
 
@@ -108,7 +108,7 @@ func TestExtractFirstPosition(t *testing.T) {
 		{"and -13 years later...", -1, -1},   // 7
 	} {
 		start, end := dice.ExtractDicePosition(one.Text)
-		assert.Equal(t, one.Start, start, fmt.Sprintf("Table index %d: %s", i, one.Text))
-		assert.Equal(t, one.End, end, fmt.Sprintf("Table index %d: %s", i, one.Text))
+		check.Equal(t, one.Start, start, fmt.Sprintf("Table index %d: %s", i, one.Text))
+		check.Equal(t, one.End, end, fmt.Sprintf("Table index %d: %s", i, one.Text))
 	}
 }
