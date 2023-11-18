@@ -66,7 +66,7 @@ func (n *SimpleNamer) GenerateName() string {
 
 // GenerateNameWithRandomizer generates a new random name using the specified randomizer.
 func (n *SimpleNamer) GenerateNameWithRandomizer(rnd rand.Randomizer) string {
-	v := rnd.Intn(n.total)
+	v := 1 + rnd.Intn(n.total)
 	for i := range n.data {
 		if v -= n.data[i].count; v < 1 {
 			return txt.FirstToUpper(n.data[i].name)
