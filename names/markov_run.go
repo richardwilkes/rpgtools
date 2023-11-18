@@ -23,15 +23,23 @@ type stringLast struct {
 
 // MarkovRunNamer provides a name generator that creates a name based on markov chains of runs of vowels or consonants.
 type MarkovRunNamer struct {
-	mapping map[string][]stringLast
-	final   map[string]struct{}
-	lengths [][2]int
+	mapping      map[string][]stringLast
+	final        map[string]struct{}
+	lengths      [][2]int
+	lowered      bool
+	firstToUpper bool
 }
 
 // NewMarkovRunNamer creates a new MarkovRunNamer. The data should be a map of names to a count which indicates how
-// common the name is relative to others in the set. Any count less than 1 effectively removes the name from the set.
-func NewMarkovRunNamer(data map[string]int) *MarkovRunNamer {
-	n := &MarkovRunNamer{final: make(map[string]struct{})}
+// common the name is relative to others in the set. Any count less than 1 effectively removes the name from the set. If
+// 'lowered' is true, then the result will be forced to lowercase. If 'firstToUpper' is true, then the result will have
+// its first letter capitalized.
+func NewMarkovRunNamer(data map[string]int, lowered, firstToUpper bool) *MarkovRunNamer {
+	n := &MarkovRunNamer{
+		final:        make(map[string]struct{}),
+		lowered:      lowered,
+		firstToUpper: firstToUpper,
+	}
 	mapping := make(map[string]map[string]int)
 	lengths := make(map[int]int)
 	for name, count := range data {
@@ -46,8 +54,14 @@ func NewMarkovRunNamer(data map[string]int) *MarkovRunNamer {
 }
 
 // NewMarkovRunUnweightedNamer creates a new MarkovRunNamer. The data should be a set of names to train the model with.
-func NewMarkovRunUnweightedNamer(data []string) *MarkovRunNamer {
-	n := &MarkovRunNamer{final: make(map[string]struct{})}
+// If 'lowered' is true, then the result will be forced to lowercase. If 'firstToUpper' is true, then the result will
+// have its first letter capitalized.
+func NewMarkovRunUnweightedNamer(data []string, lowered, firstToUpper bool) *MarkovRunNamer {
+	n := &MarkovRunNamer{
+		final:        make(map[string]struct{}),
+		lowered:      lowered,
+		firstToUpper: firstToUpper,
+	}
 	mapping := make(map[string]map[string]int)
 	lengths := make(map[int]int)
 	for _, name := range data {
@@ -60,7 +74,6 @@ func NewMarkovRunUnweightedNamer(data []string) *MarkovRunNamer {
 }
 
 func (n *MarkovRunNamer) add(name string, count int, mapping map[string]map[string]int, lengths map[int]int) {
-	name = strings.ToLower(name)
 	last := ""
 	for _, next := range n.decompose(name) {
 		m, ok := mapping[last]
@@ -156,7 +169,14 @@ func (n *MarkovRunNamer) GenerateNameWithRandomizer(rnd rand.Randomizer) string 
 			}
 		}
 	}
-	return txt.FirstToUpper(buffer.String())
+	result := buffer.String()
+	if n.lowered {
+		result = strings.ToLower(result)
+	}
+	if n.firstToUpper {
+		result = txt.FirstToUpper(result)
+	}
+	return result
 }
 
 func (n *MarkovRunNamer) nextPart(m []stringLast, rnd rand.Randomizer) string {

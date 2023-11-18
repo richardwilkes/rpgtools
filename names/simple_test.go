@@ -15,18 +15,59 @@ import (
 	"github.com/richardwilkes/toolbox/check"
 )
 
+var data = map[string]int{
+	"aA": 1,
+	"bB": 1,
+}
+
 func TestSimple(t *testing.T) {
-	s := NewSimpleNamer(map[string]int{
-		"a": 1,
-		"b": 1,
-	})
+	s := NewSimpleNamer(data, false, false)
 	counts := make(map[string]int)
-	for i := 0; i < 100; i++ {
+	for i := 0; i < 25; i++ {
 		counts[s.GenerateName()]++
 	}
 	check.Equal(t, 2, len(counts))
-	_, exists := counts["A"]
-	check.True(t, exists, "a")
-	_, exists = counts["B"]
-	check.True(t, exists, "b")
+	_, exists := counts["aA"]
+	check.True(t, exists, "expecting to find 'aA' in: %v", counts)
+	_, exists = counts["bB"]
+	check.True(t, exists, "expecting to find 'bB' in: %v", counts)
+}
+
+func TestSimpleLowered(t *testing.T) {
+	s := NewSimpleNamer(data, true, false)
+	counts := make(map[string]int)
+	for i := 0; i < 25; i++ {
+		counts[s.GenerateName()]++
+	}
+	check.Equal(t, 2, len(counts))
+	_, exists := counts["aa"]
+	check.True(t, exists, "expecting to find 'aa' in: %v", counts)
+	_, exists = counts["bb"]
+	check.True(t, exists, "expecting to find 'bb' in: %v", counts)
+}
+
+func TestSimpleFirstUpper(t *testing.T) {
+	s := NewSimpleNamer(data, false, true)
+	counts := make(map[string]int)
+	for i := 0; i < 25; i++ {
+		counts[s.GenerateName()]++
+	}
+	check.Equal(t, 2, len(counts))
+	_, exists := counts["AA"]
+	check.True(t, exists, "expecting to find 'AA' in: %v", counts)
+	_, exists = counts["BB"]
+	check.True(t, exists, "expecting to find 'BB' in: %v", counts)
+}
+
+func TestSimpleLoweredAndFirstUpper(t *testing.T) {
+	s := NewSimpleNamer(data, true, true)
+	counts := make(map[string]int)
+	for i := 0; i < 25; i++ {
+		counts[s.GenerateName()]++
+	}
+	check.Equal(t, 2, len(counts))
+	_, exists := counts["Aa"]
+	check.True(t, exists, "expecting to find 'Aa' in: %v", counts)
+	_, exists = counts["Bb"]
+	check.True(t, exists, "expecting to find 'Bb' in: %v", counts)
 }

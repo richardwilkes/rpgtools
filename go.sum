@@ -1,5 +1,5 @@
-github.com/richardwilkes/toolbox v1.101.0 h1:D/2hY+A5Uewb8lM6VhpTVDgF/N2mFlGAxvpCN/KSUVE=
-github.com/richardwilkes/toolbox v1.101.0/go.mod h1:IVlL/azg8nOV6pyM0IVYe31HUKhjmL2ksPEOzh4jgas=
+github.com/richardwilkes/toolbox v1.101.1 h1:n8aeN14QFsIAw7+mEF13iR00Cc/pyUAn5nXiZabwisc=
+github.com/richardwilkes/toolbox v1.101.1/go.mod h1:i9BxHSIG7QmeMYeokUNJlJqTA+UcTCwaqFvVu9gK1tw=
 golang.org/x/exp v0.0.0-20231110203233-9a3e6036ecaa h1:FRnLl4eNAQl8hwxVVC17teOw8kdjVDVAiFMtgUdTSRQ=
 golang.org/x/exp v0.0.0-20231110203233-9a3e6036ecaa/go.mod h1:zk2irFbV9DP96SEBUUAy67IdHUaZuSnrz1n472HUCLE=
 gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405 h1:yhCVgyC4o1eVCa2tZl7eS0r+SDo693bJlVdllGtEeKM=

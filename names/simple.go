@@ -26,18 +26,26 @@ type nameCount struct {
 
 // SimpleNamer provides a name generator that selects a name from the weighted set of names provided to it.
 type SimpleNamer struct {
-	data  []nameCount
-	total int
+	data         []nameCount
+	total        int
+	lowered      bool
+	firstToUpper bool
 }
 
 // NewSimpleNamer creates a new SimpleNamer. The data should be a map of names to a count which indicates how common the
-// name is relative to others in the set. Any count less than 1 effectively removes the name from the set.
-func NewSimpleNamer(data map[string]int) *SimpleNamer {
-	n := SimpleNamer{data: make([]nameCount, 0, len(data))}
+// name is relative to others in the set. Any count less than 1 effectively removes the name from the set. If 'lowered'
+// is true, then the result will be forced to lowercase. If 'firstToUpper' is true, then the result will have its first
+// letter capitalized.
+func NewSimpleNamer(data map[string]int, lowered, firstToUpper bool) *SimpleNamer {
+	n := SimpleNamer{
+		data:         make([]nameCount, 0, len(data)),
+		lowered:      lowered,
+		firstToUpper: firstToUpper,
+	}
 	for name, count := range data {
 		if count > 0 {
 			if name = strings.TrimSpace(name); name != "" {
-				n.data = append(n.data, nameCount{name: strings.ToLower(name), count: count})
+				n.data = append(n.data, nameCount{name: name, count: count})
 				n.total += count
 			}
 		}
@@ -46,12 +54,18 @@ func NewSimpleNamer(data map[string]int) *SimpleNamer {
 	return &n
 }
 
-// NewSimpleUnweightedNamer creates a new SimpleNamer. The data should be a set of names to choose from.
-func NewSimpleUnweightedNamer(data []string) *SimpleNamer {
-	n := SimpleNamer{data: make([]nameCount, 0, len(data))}
+// NewSimpleUnweightedNamer creates a new SimpleNamer. The data should be a set of names to choose from. If 'lowered' is
+// true, then the result will be forced to lowercase. If 'firstToUpper' is true, then the result will have its first
+// letter capitalized.
+func NewSimpleUnweightedNamer(data []string, lowered, firstToUpper bool) *SimpleNamer {
+	n := SimpleNamer{
+		data:         make([]nameCount, 0, len(data)),
+		lowered:      lowered,
+		firstToUpper: firstToUpper,
+	}
 	for _, name := range data {
 		if name = strings.TrimSpace(name); name != "" {
-			n.data = append(n.data, nameCount{name: strings.ToLower(name), count: 1})
+			n.data = append(n.data, nameCount{name: name, count: 1})
 			n.total++
 		}
 	}
@@ -69,9 +83,22 @@ func (n *SimpleNamer) GenerateNameWithRandomizer(rnd rand.Randomizer) string {
 	v := 1 + rnd.Intn(n.total)
 	for i := range n.data {
 		if v -= n.data[i].count; v < 1 {
-			return txt.FirstToUpper(n.data[i].name)
+			return n.finish(n.data[i].name)
 		}
 	}
 	// Should not be reachable
-	return txt.FirstToUpper(n.data[0].name)
+	if len(n.data) == 0 {
+		return ""
+	}
+	return n.finish(n.data[0].name)
+}
+
+func (n *SimpleNamer) finish(in string) string {
+	if n.lowered {
+		in = strings.ToLower(in)
+	}
+	if n.firstToUpper {
+		in = txt.FirstToUpper(in)
+	}
+	return in
 }

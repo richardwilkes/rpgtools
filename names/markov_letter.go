@@ -26,22 +26,27 @@ type runeLast struct {
 // MarkovLetterNamer provides a name generator that creates a name based on markov chains of individual letter
 // sequences.
 type MarkovLetterNamer struct {
-	depth   int
-	mapping map[string][]runeLast
-	final   map[rune]struct{}
-	lengths [][2]int
+	depth        int
+	mapping      map[string][]runeLast
+	final        map[rune]struct{}
+	lengths      [][2]int
+	lowered      bool
+	firstToUpper bool
 }
 
 // NewMarkovLetterNamer creates a new MarkovLetterNamer. The depth is the number of letters to consider within a run at
 // a time. The data should be a map of names to a count which indicates how common the name is relative to others in the
-// set. Any count less than 1 effectively removes the name from the set.
-func NewMarkovLetterNamer(depth int, data map[string]int) *MarkovLetterNamer {
+// set. Any count less than 1 effectively removes the name from the set. If 'lowered' is true, then the result will be
+// forced to lowercase. If 'firstToUpper' is true, then the result will have its first letter capitalized.
+func NewMarkovLetterNamer(depth int, data map[string]int, lowered, firstToUpper bool) *MarkovLetterNamer {
 	if depth < 1 {
 		depth = 1
 	}
 	n := &MarkovLetterNamer{
-		depth: depth,
-		final: make(map[rune]struct{}),
+		depth:        depth,
+		final:        make(map[rune]struct{}),
+		lowered:      lowered,
+		firstToUpper: firstToUpper,
 	}
 	mapping := make(map[string]map[rune]int)
 	lengths := make(map[int]int)
@@ -57,14 +62,17 @@ func NewMarkovLetterNamer(depth int, data map[string]int) *MarkovLetterNamer {
 }
 
 // NewMarkovLetterUnweightedNamer creates a new MarkovLetterNamer. The depth is the number of letters to consider within
-// a run at a time. The data should be a set of names to train the model with.
-func NewMarkovLetterUnweightedNamer(depth int, data []string) *MarkovLetterNamer {
+// a run at a time. The data should be a set of names to train the model with. If 'lowered' is true, then the result
+// will be forced to lowercase. If 'firstToUpper' is true, then the result will have its first letter capitalized.
+func NewMarkovLetterUnweightedNamer(depth int, data []string, lowered, firstToUpper bool) *MarkovLetterNamer {
 	if depth < 1 {
 		depth = 1
 	}
 	n := &MarkovLetterNamer{
-		depth: depth,
-		final: make(map[rune]struct{}),
+		depth:        depth,
+		final:        make(map[rune]struct{}),
+		lowered:      lowered,
+		firstToUpper: firstToUpper,
 	}
 	mapping := make(map[string]map[rune]int)
 	lengths := make(map[int]int)
@@ -78,7 +86,6 @@ func NewMarkovLetterUnweightedNamer(depth int, data []string) *MarkovLetterNamer
 }
 
 func (n *MarkovLetterNamer) add(name string, count int, mapping map[string]map[rune]int, lengths map[int]int) {
-	name = strings.ToLower(name)
 	ch := make([]rune, n.depth)
 	for _, next := range name {
 		key := string(ch)
@@ -141,7 +148,14 @@ func (n *MarkovLetterNamer) GenerateNameWithRandomizer(rnd rand.Randomizer) stri
 			}
 		}
 	}
-	return txt.FirstToUpper(buffer.String())
+	result := buffer.String()
+	if n.lowered {
+		result = strings.ToLower(result)
+	}
+	if n.firstToUpper {
+		result = txt.FirstToUpper(result)
+	}
+	return result
 }
 
 func computeLengths(lengths map[int]int) [][2]int {
