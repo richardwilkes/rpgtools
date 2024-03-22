@@ -1,6 +1,6 @@
 module github.com/richardwilkes/rpgtools
 
-go 1.22.0
+go 1.22.1
 
 require (
 	github.com/richardwilkes/toolbox v1.106.0
