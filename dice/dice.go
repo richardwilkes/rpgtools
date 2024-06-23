@@ -12,6 +12,8 @@ package dice
 
 import (
 	"bytes"
+	"encoding/binary"
+	"hash"
 	"math"
 	"strconv"
 	"strings"
@@ -345,4 +347,15 @@ func (dice *Dice) PoolProbability(target int) float64 {
 		return 0
 	}
 	return 1 - math.Pow(1-float64(1+dice.Sides-target)/float64(dice.Sides), float64(dice.Count))
+}
+
+// Hash writes this object's contents into the hasher.
+func (dice *Dice) Hash(h hash.Hash) {
+	if dice == nil {
+		return
+	}
+	_ = binary.Write(h, binary.LittleEndian, int64(dice.Count))
+	_ = binary.Write(h, binary.LittleEndian, int64(dice.Sides))
+	_ = binary.Write(h, binary.LittleEndian, int64(dice.Modifier))
+	_ = binary.Write(h, binary.LittleEndian, int64(dice.Multiplier))
 }
