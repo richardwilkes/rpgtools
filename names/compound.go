@@ -20,8 +20,8 @@ var _ Namer = &CompoundNamer{}
 
 // CompoundNamer provides a name generator that combines multiple other name generators.
 type CompoundNamer struct {
-	namers       []Namer
 	separator    string
+	namers       []Namer
 	lowered      bool
 	firstToUpper bool
 }

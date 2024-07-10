@@ -32,13 +32,13 @@ var (
 
 // Calendar holds the data for the calendar.
 type Calendar struct {
-	DayZeroWeekDay int       `json:"day_zero_weekday" yaml:"day_zero_weekday"`
+	LeapYear       *LeapYear `json:"leapyear,omitempty" yaml:",omitempty"`
+	Era            string    `json:"era,omitempty" yaml:",omitempty"`
+	PreviousEra    string    `json:"previous_era,omitempty" yaml:"previous_era,omitempty"`
 	WeekDays       []string  `json:"weekdays"`
 	Months         []Month   `json:"months"`
 	Seasons        []Season  `json:"seasons"`
-	Era            string    `json:"era,omitempty" yaml:",omitempty"`
-	PreviousEra    string    `json:"previous_era,omitempty" yaml:"previous_era,omitempty"`
-	LeapYear       *LeapYear `json:"leapyear,omitempty" yaml:",omitempty"`
+	DayZeroWeekDay int       `json:"day_zero_weekday" yaml:"day_zero_weekday"`
 }
 
 // Valid returns nil if the calendar data is usable.

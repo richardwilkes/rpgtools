@@ -28,8 +28,8 @@ const (
 // Date holds a calendar date. This is the number of days since 1/1/1 in the calendar. Note that the value -1 refers to
 // the last day of the year -1, not year 0, as there is no year 0.
 type Date struct {
-	Days int
 	cal  *Calendar
+	Days int
 }
 
 // Year returns the year of the date.

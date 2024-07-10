@@ -26,10 +26,10 @@ type runeLast struct {
 // MarkovLetterNamer provides a name generator that creates a name based on markov chains of individual letter
 // sequences.
 type MarkovLetterNamer struct {
-	depth        int
 	mapping      map[string][]runeLast
 	final        map[rune]struct{}
 	lengths      [][2]int
+	depth        int
 	lowered      bool
 	firstToUpper bool
 }
