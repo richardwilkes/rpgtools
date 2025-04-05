@@ -350,6 +350,8 @@ func (dice *Dice) PoolProbability(target int) float64 {
 }
 
 // Hash writes this object's contents into the hasher.
+//
+//nolint:errcheck // Ignore failure to check error return on binary.Write
 func (dice *Dice) Hash(h hash.Hash) {
 	if dice == nil {
 		return
