@@ -224,7 +224,7 @@ func (dice *Dice) RollWithRandomizer(rnd rand.Randomizer, extraDiceFromModifiers
 	}
 	switch {
 	case dice.Sides > 1:
-		for i := 0; i < count; i++ {
+		for range count {
 			result += 1 + rnd.Intn(dice.Sides)
 		}
 	case dice.Sides == 1:

@@ -95,7 +95,7 @@ func (n *MarkovLetterNamer) add(name string, count int, mapping map[string]map[r
 			mapping[key] = m
 		}
 		m[next] += count
-		for i := 0; i < n.depth-1; i++ {
+		for i := range n.depth - 1 {
 			ch[i] = ch[i+1]
 		}
 		ch[n.depth-1] = next
@@ -137,7 +137,7 @@ func (n *MarkovLetterNamer) GenerateNameWithRandomizer(rnd rand.Randomizer) stri
 		if next == 0 {
 			break
 		}
-		for i := 0; i < n.depth-1; i++ {
+		for i := range n.depth - 1 {
 			ch[i] = ch[i+1]
 		}
 		ch[n.depth-1] = next

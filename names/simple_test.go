@@ -23,7 +23,7 @@ var data = map[string]int{
 func TestSimple(t *testing.T) {
 	s := NewSimpleNamer(data, false, false)
 	counts := make(map[string]int)
-	for i := 0; i < 25; i++ {
+	for range 25 {
 		counts[s.GenerateName()]++
 	}
 	check.Equal(t, 2, len(counts))
@@ -36,7 +36,7 @@ func TestSimple(t *testing.T) {
 func TestSimpleLowered(t *testing.T) {
 	s := NewSimpleNamer(data, true, false)
 	counts := make(map[string]int)
-	for i := 0; i < 25; i++ {
+	for range 25 {
 		counts[s.GenerateName()]++
 	}
 	check.Equal(t, 2, len(counts))
@@ -49,7 +49,7 @@ func TestSimpleLowered(t *testing.T) {
 func TestSimpleFirstUpper(t *testing.T) {
 	s := NewSimpleNamer(data, false, true)
 	counts := make(map[string]int)
-	for i := 0; i < 25; i++ {
+	for range 25 {
 		counts[s.GenerateName()]++
 	}
 	check.Equal(t, 2, len(counts))
@@ -62,7 +62,7 @@ func TestSimpleFirstUpper(t *testing.T) {
 func TestSimpleLoweredAndFirstUpper(t *testing.T) {
 	s := NewSimpleNamer(data, true, true)
 	counts := make(map[string]int)
-	for i := 0; i < 25; i++ {
+	for range 25 {
 		counts[s.GenerateName()]++
 	}
 	check.Equal(t, 2, len(counts))
