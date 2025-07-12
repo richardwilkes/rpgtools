@@ -1,7 +1,7 @@
+# rpgtools
+
 [![Go Reference](https://pkg.go.dev/badge/github.com/richardwilkes/rpgtools.svg)](https://pkg.go.dev/github.com/richardwilkes/rpgtools)
 [![Go Report Card](https://goreportcard.com/badge/github.com/richardwilkes/rpgtools)](https://goreportcard.com/report/github.com/richardwilkes/rpgtools)
-
-# rpgtools
 
 Toolbox for roleplaying-game-specific code.
 
