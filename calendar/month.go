@@ -9,7 +9,7 @@
 
 package calendar
 
-import "github.com/richardwilkes/toolbox/errs"
+import "github.com/richardwilkes/toolbox/v2/errs"
 
 // Month holds information about a month within the calendar.
 type Month struct {

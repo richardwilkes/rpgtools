@@ -9,7 +9,7 @@
 
 package calendar
 
-import "github.com/richardwilkes/toolbox/errs"
+import "github.com/richardwilkes/toolbox/v2/errs"
 
 // LeapYear holds parameters for determining leap years.
 type LeapYear struct {

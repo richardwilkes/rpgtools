@@ -12,7 +12,7 @@ package names
 import (
 	"testing"
 
-	"github.com/richardwilkes/toolbox/check"
+	"github.com/richardwilkes/toolbox/v2/check"
 )
 
 var data = map[string]int{
@@ -21,53 +21,57 @@ var data = map[string]int{
 }
 
 func TestSimple(t *testing.T) {
+	c := check.New(t)
 	s := NewSimpleNamer(data, false, false)
 	counts := make(map[string]int)
 	for range 25 {
 		counts[s.GenerateName()]++
 	}
-	check.Equal(t, 2, len(counts))
+	c.Equal(2, len(counts))
 	_, exists := counts["aA"]
-	check.True(t, exists, "expecting to find 'aA' in: %v", counts)
+	c.True(exists, "expecting to find 'aA' in: %v", counts)
 	_, exists = counts["bB"]
-	check.True(t, exists, "expecting to find 'bB' in: %v", counts)
+	c.True(exists, "expecting to find 'bB' in: %v", counts)
 }
 
 func TestSimpleLowered(t *testing.T) {
+	c := check.New(t)
 	s := NewSimpleNamer(data, true, false)
 	counts := make(map[string]int)
 	for range 25 {
 		counts[s.GenerateName()]++
 	}
-	check.Equal(t, 2, len(counts))
+	c.Equal(2, len(counts))
 	_, exists := counts["aa"]
-	check.True(t, exists, "expecting to find 'aa' in: %v", counts)
+	c.True(exists, "expecting to find 'aa' in: %v", counts)
 	_, exists = counts["bb"]
-	check.True(t, exists, "expecting to find 'bb' in: %v", counts)
+	c.True(exists, "expecting to find 'bb' in: %v", counts)
 }
 
 func TestSimpleFirstUpper(t *testing.T) {
+	c := check.New(t)
 	s := NewSimpleNamer(data, false, true)
 	counts := make(map[string]int)
 	for range 25 {
 		counts[s.GenerateName()]++
 	}
-	check.Equal(t, 2, len(counts))
+	c.Equal(2, len(counts))
 	_, exists := counts["AA"]
-	check.True(t, exists, "expecting to find 'AA' in: %v", counts)
+	c.True(exists, "expecting to find 'AA' in: %v", counts)
 	_, exists = counts["BB"]
-	check.True(t, exists, "expecting to find 'BB' in: %v", counts)
+	c.True(exists, "expecting to find 'BB' in: %v", counts)
 }
 
 func TestSimpleLoweredAndFirstUpper(t *testing.T) {
+	c := check.New(t)
 	s := NewSimpleNamer(data, true, true)
 	counts := make(map[string]int)
 	for range 25 {
 		counts[s.GenerateName()]++
 	}
-	check.Equal(t, 2, len(counts))
+	c.Equal(2, len(counts))
 	_, exists := counts["Aa"]
-	check.True(t, exists, "expecting to find 'Aa' in: %v", counts)
+	c.True(exists, "expecting to find 'Aa' in: %v", counts)
 	_, exists = counts["Bb"]
-	check.True(t, exists, "expecting to find 'Bb' in: %v", counts)
+	c.True(exists, "expecting to find 'Bb' in: %v", counts)
 }

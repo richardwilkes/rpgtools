@@ -14,7 +14,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/richardwilkes/toolbox/txt"
+	"github.com/richardwilkes/toolbox/v2/xstrings"
 )
 
 // Predefined formats.
@@ -185,11 +185,11 @@ func (date Date) WriteFormat(w io.Writer, layout string) {
 			case 'W':
 				fmt.Fprint(w, date.WeekDayName())
 			case 'w':
-				fmt.Fprint(w, txt.FirstN(date.WeekDayName(), 3))
+				fmt.Fprint(w, xstrings.FirstN(date.WeekDayName(), 3))
 			case 'M':
 				fmt.Fprint(w, date.MonthName())
 			case 'm':
-				fmt.Fprint(w, txt.FirstN(date.MonthName(), 3))
+				fmt.Fprint(w, xstrings.FirstN(date.MonthName(), 3))
 			case 'N':
 				fmt.Fprint(w, date.Month())
 			case 'n':

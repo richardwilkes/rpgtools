@@ -12,7 +12,7 @@ package calendar
 import (
 	"fmt"
 
-	"github.com/richardwilkes/toolbox/errs"
+	"github.com/richardwilkes/toolbox/v2/errs"
 )
 
 // Season defines a seasonal period in the calendar.

@@ -12,8 +12,8 @@ package names
 import (
 	"strings"
 
-	"github.com/richardwilkes/toolbox/txt"
-	"github.com/richardwilkes/toolbox/xmath/rand"
+	"github.com/richardwilkes/toolbox/v2/xrand"
+	"github.com/richardwilkes/toolbox/v2/xstrings"
 )
 
 var _ Namer = &MarkovLetterNamer{}
@@ -120,11 +120,11 @@ func (n *MarkovLetterNamer) finish(mapping map[string]map[rune]int, lengths map[
 
 // GenerateName generates a new random name.
 func (n *MarkovLetterNamer) GenerateName() string {
-	return n.GenerateNameWithRandomizer(rand.NewCryptoRand())
+	return n.GenerateNameWithRandomizer(xrand.New())
 }
 
 // GenerateNameWithRandomizer generates a new random name using the specified randomizer.
-func (n *MarkovLetterNamer) GenerateNameWithRandomizer(rnd rand.Randomizer) string {
+func (n *MarkovLetterNamer) GenerateNameWithRandomizer(rnd xrand.Randomizer) string {
 	var buffer strings.Builder
 	maximum := selectMax(n.lengths, rnd)
 	ch := make([]rune, n.depth)
@@ -153,7 +153,7 @@ func (n *MarkovLetterNamer) GenerateNameWithRandomizer(rnd rand.Randomizer) stri
 		result = strings.ToLower(result)
 	}
 	if n.firstToUpper {
-		result = txt.FirstToUpper(result)
+		result = xstrings.FirstToUpper(result)
 	}
 	return result
 }
@@ -168,7 +168,7 @@ func computeLengths(lengths map[int]int) [][2]int {
 	return result
 }
 
-func selectMax(lengths [][2]int, rnd rand.Randomizer) int {
+func selectMax(lengths [][2]int, rnd xrand.Randomizer) int {
 	maximum := rnd.Intn(lengths[len(lengths)-1][1])
 	for _, p := range lengths {
 		if p[1] >= maximum {
@@ -179,7 +179,7 @@ func selectMax(lengths [][2]int, rnd rand.Randomizer) int {
 	return 5
 }
 
-func (n *MarkovLetterNamer) nextRune(m []runeLast, rnd rand.Randomizer) rune {
+func (n *MarkovLetterNamer) nextRune(m []runeLast, rnd xrand.Randomizer) rune {
 	v := rnd.Intn(m[len(m)-1].last)
 	for i := range m {
 		if v <= m[i].last {

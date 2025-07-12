@@ -12,8 +12,9 @@ package names
 import (
 	"strings"
 
-	"github.com/richardwilkes/toolbox/txt"
-	"github.com/richardwilkes/toolbox/xmath/rand"
+	"github.com/richardwilkes/toolbox/v2/xrand"
+	"github.com/richardwilkes/toolbox/v2/xstrings"
+	"github.com/richardwilkes/toolbox/v2/xunicode"
 )
 
 type stringLast struct {
@@ -93,7 +94,7 @@ func (n *MarkovRunNamer) decompose(s string) []string {
 	var buffer strings.Builder
 	state := -1
 	for _, ch := range s {
-		isVowel := txt.IsVowely(ch)
+		isVowel := xunicode.IsVowely(ch)
 		switch state {
 		case 0:
 			if isVowel {
@@ -144,11 +145,11 @@ func (n *MarkovRunNamer) finish(mapping map[string]map[string]int, lengths map[i
 
 // GenerateName generates a new random name.
 func (n *MarkovRunNamer) GenerateName() string {
-	return n.GenerateNameWithRandomizer(rand.NewCryptoRand())
+	return n.GenerateNameWithRandomizer(xrand.New())
 }
 
 // GenerateNameWithRandomizer generates a new random name using the specified randomizer.
-func (n *MarkovRunNamer) GenerateNameWithRandomizer(rnd rand.Randomizer) string {
+func (n *MarkovRunNamer) GenerateNameWithRandomizer(rnd xrand.Randomizer) string {
 	var buffer strings.Builder
 	maximum := selectMax(n.lengths, rnd)
 	last := ""
@@ -174,12 +175,12 @@ func (n *MarkovRunNamer) GenerateNameWithRandomizer(rnd rand.Randomizer) string 
 		result = strings.ToLower(result)
 	}
 	if n.firstToUpper {
-		result = txt.FirstToUpper(result)
+		result = xstrings.FirstToUpper(result)
 	}
 	return result
 }
 
-func (n *MarkovRunNamer) nextPart(m []stringLast, rnd rand.Randomizer) string {
+func (n *MarkovRunNamer) nextPart(m []stringLast, rnd xrand.Randomizer) string {
 	v := rnd.Intn(m[len(m)-1].last)
 	for i := range m {
 		if v <= m[i].last {

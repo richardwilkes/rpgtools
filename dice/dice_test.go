@@ -14,10 +14,11 @@ import (
 	"testing"
 
 	"github.com/richardwilkes/rpgtools/dice"
-	"github.com/richardwilkes/toolbox/check"
+	"github.com/richardwilkes/toolbox/v2/check"
 )
 
 func TestCreation(t *testing.T) {
+	c := check.New(t)
 	for i, one := range []struct {
 		Text                   string
 		Expected               string
@@ -59,16 +60,17 @@ func TestCreation(t *testing.T) {
 		desc := fmt.Sprintf("Table index %d: %s", i, one.Text)
 		d := dice.New(one.Text)
 		dice.GURPSFormat = one.GURPS
-		check.Equal(t, one.Expected, d.StringExtra(one.ExtraDiceFromModifiers), desc)
-		check.Equal(t, one.Count, d.Count, desc)
-		check.Equal(t, one.Sides, d.Sides, desc)
-		check.Equal(t, one.Modifier, d.Modifier, desc)
-		check.Equal(t, one.Multiplier, d.Multiplier, desc)
+		c.Equal(one.Expected, d.StringExtra(one.ExtraDiceFromModifiers), desc)
+		c.Equal(one.Count, d.Count, desc)
+		c.Equal(one.Sides, d.Sides, desc)
+		c.Equal(one.Modifier, d.Modifier, desc)
+		c.Equal(one.Multiplier, d.Multiplier, desc)
 	}
 	dice.GURPSFormat = false
 }
 
 func TestApplyExtraDiceFromModifiersAfter(t *testing.T) {
+	c := check.New(t)
 	for i, one := range []struct {
 		Text     string
 		Expected string
@@ -84,13 +86,14 @@ func TestApplyExtraDiceFromModifiersAfter(t *testing.T) {
 		desc := fmt.Sprintf("Table index %d: %s", i, one.Text)
 		d := dice.New(one.Text)
 		d.ApplyExtraDiceFromModifiers()
-		check.Equal(t, one.Expected, d.String(), desc)
-		check.Equal(t, one.Count, d.Count, desc)
-		check.Equal(t, one.Modifier, d.Modifier, desc)
+		c.Equal(one.Expected, d.String(), desc)
+		c.Equal(one.Count, d.Count, desc)
+		c.Equal(one.Modifier, d.Modifier, desc)
 	}
 }
 
 func TestExtractFirstPosition(t *testing.T) {
+	c := check.New(t)
 	for i, one := range []struct {
 		Text  string
 		Start int
@@ -107,8 +110,9 @@ func TestExtractFirstPosition(t *testing.T) {
 		{"and +13 years later...", -1, -1},   // 7
 		{"and -13 years later...", -1, -1},   // 7
 	} {
+		desc := fmt.Sprintf("Table index %d: %s", i, one.Text)
 		start, end := dice.ExtractDicePosition(one.Text)
-		check.Equal(t, one.Start, start, fmt.Sprintf("Table index %d: %s", i, one.Text))
-		check.Equal(t, one.End, end, fmt.Sprintf("Table index %d: %s", i, one.Text))
+		c.Equal(one.Start, start, desc)
+		c.Equal(one.End, end, desc)
 	}
 }

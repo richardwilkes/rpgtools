@@ -12,8 +12,8 @@ package names
 import (
 	"strings"
 
-	"github.com/richardwilkes/toolbox/txt"
-	"github.com/richardwilkes/toolbox/xmath/rand"
+	"github.com/richardwilkes/toolbox/v2/xrand"
+	"github.com/richardwilkes/toolbox/v2/xstrings"
 )
 
 var _ Namer = &CompoundNamer{}
@@ -40,11 +40,11 @@ func NewCompoundNamer(separator string, lowered, firstToUpper bool, namers ...Na
 
 // GenerateName generates a new random name.
 func (n *CompoundNamer) GenerateName() string {
-	return n.GenerateNameWithRandomizer(rand.NewCryptoRand())
+	return n.GenerateNameWithRandomizer(xrand.New())
 }
 
 // GenerateNameWithRandomizer generates a new random name using the specified randomizer.
-func (n *CompoundNamer) GenerateNameWithRandomizer(rnd rand.Randomizer) string {
+func (n *CompoundNamer) GenerateNameWithRandomizer(rnd xrand.Randomizer) string {
 	var buffer strings.Builder
 	for i, namer := range n.namers {
 		if i != 0 {
@@ -57,7 +57,7 @@ func (n *CompoundNamer) GenerateNameWithRandomizer(rnd rand.Randomizer) string {
 		result = strings.ToLower(result)
 	}
 	if n.firstToUpper {
-		result = txt.FirstToUpper(result)
+		result = xstrings.FirstToUpper(result)
 	}
 	return result
 }

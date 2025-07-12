@@ -18,7 +18,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/richardwilkes/toolbox/xmath/rand"
+	"github.com/richardwilkes/toolbox/v2/xrand"
 )
 
 // GURPSFormat determines whether GURPS dice formatting should be used. A value of true means the die count is always
@@ -217,10 +217,10 @@ func (dice *Dice) Roll(extraDiceFromModifiers bool) int {
 // RollWithRandomizer returns the result of rolling the dice. If 'rnd' is nil, rand.NewCryptoRand() will be used.
 // 'extraDiceFromModifiers' determines if modifiers greater than or equal to the average result of the base die should
 // be converted to extra dice for the purposes of this call. For example, 1d6+8 will become 3d6+1.
-func (dice *Dice) RollWithRandomizer(rnd rand.Randomizer, extraDiceFromModifiers bool) int {
+func (dice *Dice) RollWithRandomizer(rnd xrand.Randomizer, extraDiceFromModifiers bool) int {
 	count, result := dice.adjustedCountAndModifier(extraDiceFromModifiers)
 	if rnd == nil {
-		rnd = rand.NewCryptoRand()
+		rnd = xrand.New()
 	}
 	switch {
 	case dice.Sides > 1:

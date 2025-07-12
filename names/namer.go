@@ -9,14 +9,12 @@
 
 package names
 
-import (
-	"github.com/richardwilkes/toolbox/xmath/rand"
-)
+import "github.com/richardwilkes/toolbox/v2/xrand"
 
 // Namer defines the methods required of a name generator.
 type Namer interface {
 	// GenerateName generates a new random name.
 	GenerateName() string
 	// GenerateNameWithRandomizer generates a new random name using the specified randomizer.
-	GenerateNameWithRandomizer(rnd rand.Randomizer) string
+	GenerateNameWithRandomizer(rnd xrand.Randomizer) string
 }

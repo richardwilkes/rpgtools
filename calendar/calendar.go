@@ -17,8 +17,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/richardwilkes/toolbox/errs"
-	"github.com/richardwilkes/toolbox/txt"
+	"github.com/richardwilkes/toolbox/v2/errs"
+	"github.com/richardwilkes/toolbox/v2/xstrings"
 )
 
 var (
@@ -149,7 +149,7 @@ func (cal *Calendar) ParseDate(in string) (Date, error) {
 	}
 	if parts := regexMonthDDYYYY.FindStringSubmatch(in); parts != nil {
 		for i, month := range cal.Months {
-			if strings.EqualFold(parts[1], month.Name) || strings.EqualFold(parts[1], txt.FirstN(month.Name, 3)) {
+			if strings.EqualFold(parts[1], month.Name) || strings.EqualFold(parts[1], xstrings.FirstN(month.Name, 3)) {
 				return cal.parseDate(i+1, parts[2], parts[3], parts[4])
 			}
 		}

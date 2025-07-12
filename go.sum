@@ -1,7 +1,7 @@
-github.com/richardwilkes/toolbox v1.123.1 h1:D0iWoJvF9gx0WTiTTMriws2RiG2aRzCTFBx4habecfY=
-github.com/richardwilkes/toolbox v1.123.1/go.mod h1:W8T2nCknTllNBBi/NtbBLfLi+knf4kKxQEBXBXxBGp0=
-golang.org/x/exp v0.0.0-20250506013437-ce4c2cf36ca6 h1:y5zboxd6LQAqYIhHnB48p0ByQ/GnQx2BE33L8BOHQkI=
-golang.org/x/exp v0.0.0-20250506013437-ce4c2cf36ca6/go.mod h1:U6Lno4MTRCDY+Ba7aCcauB9T60gsv5s4ralQzP72ZoQ=
+github.com/richardwilkes/toolbox/v2 v2.0.0 h1:faqvrCSDUU+7nHZPVHLKtNYyn9b1Tm+8Qhh+Rx1JYGw=
+github.com/richardwilkes/toolbox/v2 v2.0.0/go.mod h1:1fub4t6J8oPX9PjRR3BhxUeytHfLLJNBYUvQwGs2yBM=
+golang.org/x/exp v0.0.0-20250620022241-b7579e27df2b h1:M2rDM6z3Fhozi9O7NWsxAkg/yqS/lQJ6PmkyIV3YP+o=
+golang.org/x/exp v0.0.0-20250620022241-b7579e27df2b/go.mod h1:3//PLf8L/X+8b4vuAfHzxeRUl04Adcb341+IGKfnqS8=
 gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405 h1:yhCVgyC4o1eVCa2tZl7eS0r+SDo693bJlVdllGtEeKM=
 gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405/go.mod h1:Co6ibVJAznAaIkqp8huTwlJQCZ016jof/cbN4VW5Yz0=
 gopkg.in/yaml.v3 v3.0.1 h1:fxVm/GzAzEWqLHuvctI91KS9hhNmmWOoWu0XTYJS7CA=

@@ -15,15 +15,15 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/richardwilkes/toolbox/errs"
-	"github.com/richardwilkes/toolbox/fatal"
+	"github.com/richardwilkes/toolbox/v2/errs"
+	"github.com/richardwilkes/toolbox/v2/xos"
 )
 
 // MustLoadFromReader loads a name set from the provided reader. The data should consist of lines of text, each of which
 // contains a name and a count, separated by a comma.
 func MustLoadFromReader(r io.Reader) map[string]int {
 	m, err := LoadFromReader(r)
-	fatal.IfErr(err)
+	xos.ExitIfErr(err)
 	return m
 }
 

@@ -13,8 +13,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/richardwilkes/toolbox/txt"
-	"github.com/richardwilkes/toolbox/xmath/rand"
+	"github.com/richardwilkes/toolbox/v2/xrand"
+	"github.com/richardwilkes/toolbox/v2/xstrings"
 )
 
 var _ Namer = &SimpleNamer{}
@@ -50,7 +50,7 @@ func NewSimpleNamer(data map[string]int, lowered, firstToUpper bool) *SimpleName
 			}
 		}
 	}
-	slices.SortFunc(n.data, func(a, b nameCount) int { return txt.NaturalCmp(a.name, b.name, false) })
+	slices.SortFunc(n.data, func(a, b nameCount) int { return xstrings.NaturalCmp(a.name, b.name, false) })
 	return &n
 }
 
@@ -69,17 +69,17 @@ func NewSimpleUnweightedNamer(data []string, lowered, firstToUpper bool) *Simple
 			n.total++
 		}
 	}
-	slices.SortFunc(n.data, func(a, b nameCount) int { return txt.NaturalCmp(a.name, b.name, false) })
+	slices.SortFunc(n.data, func(a, b nameCount) int { return xstrings.NaturalCmp(a.name, b.name, false) })
 	return &n
 }
 
 // GenerateName generates a new random name.
 func (n *SimpleNamer) GenerateName() string {
-	return n.GenerateNameWithRandomizer(rand.NewCryptoRand())
+	return n.GenerateNameWithRandomizer(xrand.New())
 }
 
 // GenerateNameWithRandomizer generates a new random name using the specified randomizer.
-func (n *SimpleNamer) GenerateNameWithRandomizer(rnd rand.Randomizer) string {
+func (n *SimpleNamer) GenerateNameWithRandomizer(rnd xrand.Randomizer) string {
 	v := 1 + rnd.Intn(n.total)
 	for i := range n.data {
 		if v -= n.data[i].count; v < 1 {
@@ -98,7 +98,7 @@ func (n *SimpleNamer) finish(in string) string {
 		in = strings.ToLower(in)
 	}
 	if n.firstToUpper {
-		in = txt.FirstToUpper(in)
+		in = xstrings.FirstToUpper(in)
 	}
 	return in
 }
