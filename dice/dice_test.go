@@ -107,8 +107,8 @@ func TestExtractFirstPosition(t *testing.T) {
 		{"Just text", -1, -1},                // 5
 		{"and two years later...", -1, -1},   // 6
 		{"and 13 years later...", -1, -1},    // 7
-		{"and +13 years later...", -1, -1},   // 7
-		{"and -13 years later...", -1, -1},   // 7
+		{"and +13 years later...", -1, -1},   // 8
+		{"and -13 years later...", -1, -1},   // 9
 	} {
 		desc := fmt.Sprintf("Table index %d: %s", i, one.Text)
 		start, end := dice.ExtractDicePosition(one.Text)
