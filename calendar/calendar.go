@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -55,10 +56,8 @@ func (cal *Calendar) Valid() error {
 	if cal.DayZeroWeekDay < 0 || cal.DayZeroWeekDay >= len(cal.WeekDays) {
 		return errs.New("Calendar's first week day of the first year must be a valid week day")
 	}
-	for _, weekday := range cal.WeekDays {
-		if weekday == "" {
-			return errs.New("Calendar week day names must not be empty")
-		}
+	if slices.Contains(cal.WeekDays, "") {
+		return errs.New("Calendar week day names must not be empty")
 	}
 	for _, month := range cal.Months {
 		if err := month.Valid(); err != nil {
