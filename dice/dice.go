@@ -306,7 +306,7 @@ func (dice *Dice) adjustedCountAndModifier(applyExtractDiceFromModifiers bool) (
 	if count < 0 {
 		count = 0
 	}
-	return
+	return count, modifier
 }
 
 // Normalize the internal state.
