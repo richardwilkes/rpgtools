@@ -23,7 +23,9 @@ import (
 )
 
 var (
-	// Default is the default calendar that will be used by Date.UnmarshalText() if the date was not initialized.
+	// Default is the default calendar that will be used by Date.UnmarshalText() if the date was not initialized. If you
+	// modify this (either the pointer to the Calendar, or any contents within the Calendar), you are responsible for
+	// ensuring it is done in a thread-safe context, as this code assumes it is effectively immutable when used.
 	Default = Gregorian()
 	// "9/22/2017" or "9/22/2017 AD"
 	regexMMDDYYY = regexp.MustCompile("([[:digit:]]+)/([[:digit:]]+)/(-?[[:digit:]]+) *([[:alpha:]]+)?")
