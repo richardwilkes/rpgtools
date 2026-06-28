@@ -12,7 +12,9 @@ package dice_test
 import (
 	"fmt"
 	"math"
+	"math/big"
 	"testing"
+	"time"
 
 	"github.com/richardwilkes/rpgtools/dice"
 	"github.com/richardwilkes/toolbox/v2/check"
@@ -228,6 +230,73 @@ func TestExtractValueOverflow(t *testing.T) {
 	c.Equal(6, d.Sides)
 	c.Equal(2, d.Modifier)
 	c.Equal(4, d.Multiplier)
+}
+
+// bigEvenAdjust independently computes the even-sided modifier-to-extra-dice conversion using arbitrary-precision math,
+// so it stays correct even when modifier is math.MaxInt and the intermediate products would overflow int64. It mirrors
+// the package rule: an even-sided die's true average is average+0.5, k = floor(2*modifier/(2*average+1)) dice are
+// extracted, and those dice consume ceil(k*(2*average+1)/2) of the modifier, leaving the remainder.
+func bigEvenAdjust(count, sides, modifier int) (wantCount, wantModifier int) {
+	average := (sides + 1) / 2
+	perPair := big.NewInt(int64(2*average + 1))
+	m := big.NewInt(int64(modifier))
+	k := new(big.Int).Quo(new(big.Int).Lsh(m, 1), perPair) // floor(2*modifier / perPair)
+	cost := new(big.Int).Mul(k, perPair)
+	if k.Bit(0) == 1 { // k odd: the half-die rounds up
+		cost.Add(cost, big.NewInt(1))
+	}
+	cost.Rsh(cost, 1) // /2
+	r := new(big.Int).Sub(m, cost)
+	return count + int(k.Int64()), int(r.Int64())
+}
+
+func TestExtraDiceEvenSidedMatchesReference(t *testing.T) {
+	c := check.New(t)
+	// Converting modifiers to extra dice for even-sided dice must match an independent reference exactly. The small
+	// modifiers lock in the prior shipped behavior; the large/saturated ones exercise the path where the previous
+	// O(modifier) loop would have hung.
+	for _, sides := range []int{2, 4, 6, 8, 10, 12, 20, 100} {
+		for mod := 0; mod <= 600; mod++ {
+			d := dice.Dice{Count: 1, Sides: sides, Modifier: mod, Multiplier: 1}
+			d.ApplyExtraDiceFromModifiers()
+			wantCount, wantMod := bigEvenAdjust(1, sides, mod)
+			c.Equal(wantCount, d.Count, "sides=%d mod=%d count", sides, mod)
+			c.Equal(wantMod, d.Modifier, "sides=%d mod=%d modifier", sides, mod)
+		}
+	}
+	for _, sides := range []int{2, 4, 6, 8, 100, math.MaxInt - 1} {
+		for _, mod := range []int{99999, 1000000, math.MaxInt / 3, math.MaxInt - 1, math.MaxInt} {
+			d := dice.Dice{Count: 1, Sides: sides, Modifier: mod, Multiplier: 1}
+			d.ApplyExtraDiceFromModifiers()
+			wantCount, wantMod := bigEvenAdjust(1, sides, mod)
+			c.Equal(wantCount, d.Count, "sides=%d mod=%d count", sides, mod)
+			c.Equal(wantMod, d.Modifier, "sides=%d mod=%d modifier", sides, mod)
+		}
+	}
+}
+
+func TestExtraDiceEvenSidedTerminatesOnSaturatedModifier(t *testing.T) {
+	c := check.New(t)
+	// Regression: extractValue saturates an oversized number to math.MaxInt, so dice.New("1d6+99999999999999999999")
+	// yields Modifier=math.MaxInt with an even number of sides. The conversion to extra dice must be O(1); the old loop
+	// removed only ~2*average per iteration, needing ~1.3e18 iterations (an effective hang). Run in a goroutine so a
+	// regression fails the test rather than hanging the whole suite.
+	type result struct{ count, modifier int }
+	done := make(chan result, 1)
+	go func() {
+		d := *dice.New("1d6+99999999999999999999")
+		d.ApplyExtraDiceFromModifiers()
+		done <- result{d.Count, d.Modifier}
+	}()
+	select {
+	case got := <-done:
+		c.Equal(math.MaxInt, dice.New("1d6+99999999999999999999").Modifier, "modifier should saturate to MaxInt")
+		// math.MaxInt is divisible by 7 (=2*average+1 for d6), so it converts to whole pairs with no remainder.
+		c.Equal(2*(math.MaxInt/7)+1, got.count)
+		c.Equal(0, got.modifier)
+	case <-time.After(5 * time.Second):
+		t.Fatal("ApplyExtraDiceFromModifiers did not terminate: the O(modifier) hang has regressed")
+	}
 }
 
 func TestExtractFirstPosition(t *testing.T) {

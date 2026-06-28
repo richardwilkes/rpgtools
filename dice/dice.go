@@ -295,16 +295,16 @@ func (dice *Dice) adjustedCountAndModifier(applyExtractDiceFromModifiers bool) (
 			count += modifier / average
 			modifier %= average
 		} else {
-			// Even number of sides, so average has an extra half, which means
-			// we alternate
-			for modifier > average {
-				if modifier > 2*average {
-					modifier -= 2*average + 1
-					count += 2
-				} else {
-					modifier -= average + 1
-					count++
-				}
+			// Even number of sides, so each die's true average is average+0.5. A pair of dice therefore consumes
+			// exactly 2*average+1 of the modifier and a lone die consumes average+1 (rounding the trailing half up).
+			// Compute the whole-pair and optional trailing-die counts directly; doing it by subtracting in a loop is
+			// O(modifier), which hangs when the modifier has saturated to math.MaxInt.
+			perPair := 2*average + 1
+			count += 2 * (modifier / perPair)
+			modifier %= perPair
+			if modifier >= average+1 {
+				count++
+				modifier -= average + 1
 			}
 		}
 	}
