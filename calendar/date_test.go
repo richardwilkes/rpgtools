@@ -463,12 +463,69 @@ func TestInvalidCalendarRejected(t *testing.T) {
 	c.Panics(func() { badLeapYear.MustNewDate(1, 1, 1) })
 	c.Panics(func() { badLeapYear.NewDateByDays(5000) })
 
+	// A day-zero week day outside the range of week days indexes past the WeekDays slice in WeekDay()/
+	// WeekDayName(). checkUsable must reject it at construction rather than handing back a Date that panics on
+	// access. Previously NewDate succeeded and NewDateByDays(0).WeekDayName() panicked with "index out of range
+	// [-1]".
+	badDayZeroWeekDay := &calendar.Calendar{
+		DayZeroWeekDay: -1,
+		WeekDays:       []string{"A", "B", "C"},
+		Months:         []calendar.Month{{Name: "M", Days: 30}},
+	}
+	c.HasError(badDayZeroWeekDay.Valid())
+	_, err = badDayZeroWeekDay.NewDate(1, 1, 1)
+	c.HasError(err)
+	_, err = badDayZeroWeekDay.ParseDate("1/1/1")
+	c.HasError(err)
+	c.Panics(func() { badDayZeroWeekDay.MustNewDate(1, 1, 1) })
+	c.Panics(func() { badDayZeroWeekDay.NewDateByDays(0) })
+
+	// An index equal to len(WeekDays) is equally out of range.
+	badDayZeroWeekDay.DayZeroWeekDay = len(badDayZeroWeekDay.WeekDays)
+	_, err = badDayZeroWeekDay.NewDate(1, 1, 1)
+	c.HasError(err)
+
 	// A structurally complete calendar with only a cosmetic flaw (an empty week day name) is rejected
 	// by the strict Valid, but must remain usable for date math.
 	cosmetic := calendar.Gregorian()
 	cosmetic.WeekDays[0] = ""
 	c.HasError(cosmetic.Valid())
 	c.NotPanics(func() { cosmetic.MustNewDate(1, 1, 2017) })
+}
+
+func TestValidCalendarIsUsableForDateMath(t *testing.T) {
+	c := check.New(t)
+	// Valid and the date constructors share one structural predicate (checkUsable), so any calendar Valid
+	// accepts must be safe for date math: none of its accessors may panic. Exercise each structural dimension
+	// (week day count, day-zero index, month layout, and a present leap year) so that, if Valid and the
+	// constructor gate ever drift apart, a valid calendar that panics on access is caught here.
+	for _, cal := range []*calendar.Calendar{
+		calendar.Gregorian(),
+		{ // Minimal: a single week day (day-zero index 0) and a single one-day month, no leap year.
+			WeekDays: []string{"A"},
+			Months:   []calendar.Month{{Name: "M", Days: 1}},
+			Seasons:  []calendar.Season{{Name: "S", StartMonth: 1, StartDay: 1, EndMonth: 1, EndDay: 1}},
+		},
+		{ // Day-zero index at the last week day, two months, and a valid Except-only leap rule.
+			DayZeroWeekDay: 2,
+			WeekDays:       []string{"A", "B", "C"},
+			Months:         []calendar.Month{{Name: "M1", Days: 30}, {Name: "M2", Days: 31}},
+			Seasons:        []calendar.Season{{Name: "S", StartMonth: 1, StartDay: 1, EndMonth: 2, EndDay: 31}},
+			LeapYear:       &calendar.LeapYear{Month: 1, Every: 4, Except: 8},
+		},
+	} {
+		c.NoError(cal.Valid())
+		c.NotPanics(func() {
+			for _, d := range []int{-800, -366, -1, 0, 1, 365, 800} {
+				date := cal.NewDateByDays(d)
+				_ = date.Year()
+				_ = date.Month()
+				_ = date.DayInMonth()
+				_ = date.WeekDayName()
+				_ = date.Format(calendar.FullFormat)
+			}
+		})
+	}
 }
 
 func TestUnmarshaling(t *testing.T) {

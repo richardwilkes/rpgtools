@@ -44,17 +44,11 @@ type Calendar struct {
 
 // Valid returns nil if the calendar data is usable.
 func (cal *Calendar) Valid() error {
-	if len(cal.WeekDays) == 0 {
-		return errs.New("Calendar must have at least one week day")
-	}
-	if len(cal.Months) == 0 {
-		return errs.New("Calendar must have at least one month")
+	if err := cal.checkUsable(); err != nil {
+		return err
 	}
 	if len(cal.Seasons) == 0 {
 		return errs.New("Calendar must have at least one season")
-	}
-	if cal.DayZeroWeekDay < 0 || cal.DayZeroWeekDay >= len(cal.WeekDays) {
-		return errs.New("Calendar's first week day of the first year must be a valid week day")
 	}
 	if slices.Contains(cal.WeekDays, "") {
 		return errs.New("Calendar week day names must not be empty")
@@ -69,23 +63,17 @@ func (cal *Calendar) Valid() error {
 			return err
 		}
 	}
-	if cal.LeapYear != nil {
-		if err := cal.LeapYear.Valid(cal); err != nil {
-			return err
-		}
-	}
 	return nil
 }
 
-// checkUsable returns an error if the calendar lacks the minimum structure required for date math: at least one week
-// day, at least one month with at least one day, and a valid leap year rule when one is present. This is a deliberately
-// narrow subset of Valid that ignores cosmetic concerns (such as empty week day names or missing seasons) so that dates
-// cannot be created against a calendar whose accessors would later panic (for example, with an integer divide-by-zero
-// in the leap year math when Every is 0), while still accepting the calendars the rest of the package is expected to
-// tolerate.
+// checkUsable returns an error unless the calendar is structurally safe for date math: a non-empty set of week days, an
+// in-range day-zero week day, at least one month with at least one day, and a valid leap year rule when one is present.
 func (cal *Calendar) checkUsable() error {
 	if len(cal.WeekDays) == 0 {
 		return errs.New("Calendar must have at least one week day")
+	}
+	if cal.DayZeroWeekDay < 0 || cal.DayZeroWeekDay >= len(cal.WeekDays) {
+		return errs.New("Calendar's first week day of the first year must be a valid week day")
 	}
 	if cal.MinDaysPerYear() < 1 {
 		return errs.New("Calendar must have at least one month with at least one day")
