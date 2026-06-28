@@ -77,6 +77,21 @@ func (cal *Calendar) Valid() error {
 	return nil
 }
 
+// checkUsable returns an error if the calendar lacks the minimum structure required for date math: at least one week
+// day and at least one month with at least one day. This is a deliberately narrow subset of Valid that ignores cosmetic
+// concerns (such as empty week day names or missing seasons) so that dates cannot be created against a calendar whose
+// accessors would later panic with a divide-by-zero, while still accepting the calendars the rest of the package is
+// expected to tolerate.
+func (cal *Calendar) checkUsable() error {
+	if len(cal.WeekDays) == 0 {
+		return errs.New("Calendar must have at least one week day")
+	}
+	if cal.MinDaysPerYear() < 1 {
+		return errs.New("Calendar must have at least one month with at least one day")
+	}
+	return nil
+}
+
 // MustNewDate creates a new date from the specified month, day and year. Panics if the values are invalid.
 func (cal *Calendar) MustNewDate(month, day, year int) Date {
 	date, err := cal.NewDate(month, day, year)
@@ -88,6 +103,9 @@ func (cal *Calendar) MustNewDate(month, day, year int) Date {
 
 // NewDate creates a new date from the specified month, day and year.
 func (cal *Calendar) NewDate(month, day, year int) (Date, error) {
+	if err := cal.checkUsable(); err != nil {
+		return Date{cal: cal}, err
+	}
 	if year == 0 {
 		return Date{cal: cal}, errs.New("year 0 is invalid")
 	}
@@ -111,8 +129,12 @@ func (cal *Calendar) NewDate(month, day, year int) (Date, error) {
 	return Date{Days: days, cal: cal}, nil
 }
 
-// NewDateByDays creates a new date from a number of days, with 0 representing the date 1/1/1.
+// NewDateByDays creates a new date from a number of days, with 0 representing the date 1/1/1. It panics if the calendar
+// is not usable for date math; call Valid in advance to check a calendar without risking a panic.
 func (cal *Calendar) NewDateByDays(days int) Date {
+	if err := cal.checkUsable(); err != nil {
+		panic(err) // @allow
+	}
 	return Date{Days: days, cal: cal}
 }
 

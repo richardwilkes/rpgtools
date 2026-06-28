@@ -346,6 +346,40 @@ func TestZeroValueDate(t *testing.T) {
 	c.Equal(`{"Date":"1/1/1"}`, string(text))
 }
 
+func TestInvalidCalendarRejected(t *testing.T) {
+	c := check.New(t)
+
+	// A calendar with no months has no notion of a year, so date math would divide by zero. It must
+	// be rejected at construction rather than panicking later.
+	noMonths := &calendar.Calendar{WeekDays: []string{"A", "B"}}
+	_, err := noMonths.NewDate(1, 1, 1)
+	c.HasError(err)
+	_, err = noMonths.ParseDate("1/1/1")
+	c.HasError(err)
+	c.Panics(func() { noMonths.MustNewDate(1, 1, 1) })
+	c.Panics(func() { noMonths.NewDateByDays(0) })
+
+	// A calendar whose months sum to zero days is equally unusable.
+	zeroDays := &calendar.Calendar{WeekDays: []string{"A"}, Months: []calendar.Month{{Name: "M", Days: 0}}}
+	_, err = zeroDays.NewDate(1, 1, 1)
+	c.HasError(err)
+
+	// A calendar with no week days would divide by zero in WeekDay. Previously NewDateByDays produced
+	// a Date that panicked with an opaque integer divide-by-zero on first access; now it is rejected
+	// up front.
+	noWeekDays := &calendar.Calendar{Months: []calendar.Month{{Name: "M", Days: 30}}}
+	_, err = noWeekDays.NewDate(1, 1, 1)
+	c.HasError(err)
+	c.Panics(func() { noWeekDays.NewDateByDays(10) })
+
+	// A structurally complete calendar with only a cosmetic flaw (an empty week day name) is rejected
+	// by the strict Valid, but must remain usable for date math.
+	cosmetic := calendar.Gregorian()
+	cosmetic.WeekDays[0] = ""
+	c.HasError(cosmetic.Valid())
+	c.NotPanics(func() { cosmetic.MustNewDate(1, 1, 2017) })
+}
+
 func TestUnmarshaling(t *testing.T) {
 	c := check.New(t)
 	cal := calendar.Gregorian()
