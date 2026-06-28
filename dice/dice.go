@@ -108,7 +108,8 @@ func extractValue(in string, inPos int) (value, outPos int) {
 	return value, inPos
 }
 
-// ExtractDicePosition returns the start (inclusive) and end (exclusive) index of the Dice specification. If none can be found, -1, -1 will be returned.
+// ExtractDicePosition returns the start (inclusive) and end (exclusive) index of the Dice specification. If none can be
+// found, -1, -1 will be returned.
 func ExtractDicePosition(text string) (start, end int) {
 	start = -1
 	state := 0
