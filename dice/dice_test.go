@@ -93,6 +93,35 @@ func TestApplyExtraDiceFromModifiersAfter(t *testing.T) {
 	}
 }
 
+//nolint:goconst // The tests are more readable without constants for duplicated string
+func TestStringRoundTrip(t *testing.T) {
+	c := check.New(t)
+	// String() must emit text that New() parses back into an equivalent Dice. The "+" separator before a positive
+	// modifier is required whenever a die term was already written, including the degenerate zero-sided case (e.g.
+	// "3d0+2" must not collapse to the ambiguous "3d02").
+	for i, one := range []struct {
+		Text     string
+		Expected string
+	}{
+		{"3d0+2", "3d0+2"},   // 0 - regression: previously emitted "3d02" -> reparsed as "3d2"
+		{"d0+2", "d0+2"},     // 1
+		{"3d0-2", "3d0-2"},   // 2
+		{"d6+2", "d6+2"},     // 3
+		{"3d6+13", "3d6+13"}, // 4
+		{"2d4x2", "2d4x2"},   // 5
+		{"3d8-13", "3d8-13"}, // 6
+		{"4", "4"},           // 7
+		{"-1", "-1"},         // 8
+		{"x3", "0x3"},        // 9
+	} {
+		desc := fmt.Sprintf("Table index %d: %s", i, one.Text)
+		d := dice.New(one.Text)
+		s := d.String()
+		c.Equal(one.Expected, s, desc)
+		c.True(d.IsEquivalent(dice.New(s)), "%s: %q did not round-trip", desc, s)
+	}
+}
+
 func TestRollSingleSided(t *testing.T) {
 	c := check.New(t)
 	// One-sided dice are deterministic, so a roll must match the min/max and must

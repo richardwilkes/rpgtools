@@ -253,7 +253,7 @@ func (dice *Dice) StringExtra(extraDiceFromModifiers bool) string {
 		}
 	}
 	if modifier > 0 {
-		if count != 0 && dice.Sides != 0 {
+		if buffer.Len() != 0 {
 			buffer.WriteString("+")
 		}
 		buffer.WriteString(strconv.Itoa(modifier))
