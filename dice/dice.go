@@ -26,6 +26,18 @@ import (
 // it is a '1' and the sides value is always shown.
 var GURPSFormat = false
 
+// MaxValue and MinValue bound each Dice field. The fields are kept within this range so that combinations of large
+// values cannot saturate or overflow the derived calculations. MinValue only applies to Modifier, the sole field that
+// may be negative; Count and Sides have a minimum of 0 and Multiplier a minimum of 1.
+//
+// These are variables so the limits may be tuned, but raise MaxValue with care: the calculations multiply up to three
+// fields together (e.g. Maximum computes count*sides*multiplier), so a MaxValue much above ~2,000,000 risks overflowing
+// the int results on a 64-bit platform.
+var (
+	MaxValue = 1_000_000
+	MinValue = -1_000_000
+)
+
 // Dice holds the dice information.
 type Dice struct {
 	Count      int
@@ -97,11 +109,11 @@ func extractValue(in string, inPos int) (value, outPos int) {
 		if ch < '0' || ch > '9' {
 			return value, inPos
 		}
-		digit := int(ch - '0')
-		if value > (math.MaxInt-digit)/10 {
-			value = math.MaxInt // Saturate rather than overflow on an absurdly long number.
-		} else {
-			value = value*10 + digit
+		if value < MaxValue {
+			value = value*10 + int(ch-'0')
+			if value > MaxValue {
+				value = MaxValue // Cap rather than overflow on an absurdly long number.
+			}
 		}
 		inPos++
 	}
@@ -185,31 +197,31 @@ func ExtractDicePosition(text string) (start, end int) {
 // average result of the base die should be converted to extra dice for the purposes of this call. For example, 1d6+8
 // will become 3d6+1.
 func (dice *Dice) Minimum(extraDiceFromModifiers bool) int {
-	count, result := dice.adjustedCountAndModifier(extraDiceFromModifiers)
-	if dice.Sides > 0 {
+	count, sides, result, multiplier := dice.adjustedValues(extraDiceFromModifiers)
+	if sides > 0 {
 		result += count
 	}
-	return result * dice.Multiplier
+	return result * multiplier
 }
 
 // Average returns the average result. 'extraDiceFromModifiers' determines if modifiers greater than or equal to the
 // average result of the base die should be converted to extra dice for the purposes of this call. For example, 1d6+8
 // will become 3d6+1.
 func (dice *Dice) Average(extraDiceFromModifiers bool) int {
-	count, result := dice.adjustedCountAndModifier(extraDiceFromModifiers)
-	if count > 0 && dice.Sides > 0 {
-		result += count * (dice.Sides + 1) / 2
+	count, sides, result, multiplier := dice.adjustedValues(extraDiceFromModifiers)
+	if count > 0 && sides > 0 {
+		result += count * (sides + 1) / 2
 	}
-	return result * dice.Multiplier
+	return result * multiplier
 }
 
 // Maximum returns the maximum result. 'extraDiceFromModifiers' determines if modifiers greater than or equal to the
 // average result of the base die should be converted to extra dice for the purposes of this call. For example, 1d6+8
 // will become 3d6+1.
 func (dice *Dice) Maximum(extraDiceFromModifiers bool) int {
-	count, result := dice.adjustedCountAndModifier(extraDiceFromModifiers)
-	result += count * dice.Sides
-	return result * dice.Multiplier
+	count, sides, result, multiplier := dice.adjustedValues(extraDiceFromModifiers)
+	result += count * sides
+	return result * multiplier
 }
 
 // Roll returns the result of rolling the dice. 'extraDiceFromModifiers' determines if modifiers greater than or equal
@@ -223,19 +235,19 @@ func (dice *Dice) Roll(extraDiceFromModifiers bool) int {
 // 'extraDiceFromModifiers' determines if modifiers greater than or equal to the average result of the base die should
 // be converted to extra dice for the purposes of this call. For example, 1d6+8 will become 3d6+1.
 func (dice *Dice) RollWithRandomizer(rnd xrand.Randomizer, extraDiceFromModifiers bool) int {
-	count, result := dice.adjustedCountAndModifier(extraDiceFromModifiers)
+	count, sides, result, multiplier := dice.adjustedValues(extraDiceFromModifiers)
 	if rnd == nil {
 		rnd = xrand.New()
 	}
 	switch {
-	case dice.Sides > 1:
+	case sides > 1:
 		for range count {
-			result += 1 + rnd.Intn(dice.Sides)
+			result += 1 + rnd.Intn(sides)
 		}
-	case dice.Sides == 1:
+	case sides == 1:
 		result += count
 	}
-	return result * dice.Multiplier
+	return result * multiplier
 }
 
 func (dice *Dice) String() string {
@@ -246,15 +258,15 @@ func (dice *Dice) String() string {
 // than or equal to the average result of the base die should be converted to extra dice for the purposes of this call.
 // For example, 1d6+8 will become 3d6+1.
 func (dice *Dice) StringExtra(extraDiceFromModifiers bool) string {
-	count, modifier := dice.adjustedCountAndModifier(extraDiceFromModifiers)
+	count, sides, modifier, multiplier := dice.adjustedValues(extraDiceFromModifiers)
 	var buffer bytes.Buffer
 	if count > 0 {
 		if GURPSFormat || count > 1 {
 			buffer.WriteString(strconv.Itoa(count))
 		}
 		buffer.WriteString("d")
-		if !GURPSFormat || dice.Sides != 6 {
-			buffer.WriteString(strconv.Itoa(dice.Sides))
+		if !GURPSFormat || sides != 6 {
+			buffer.WriteString(strconv.Itoa(sides))
 		}
 	}
 	if modifier > 0 {
@@ -268,9 +280,9 @@ func (dice *Dice) StringExtra(extraDiceFromModifiers bool) string {
 	if buffer.Len() == 0 {
 		buffer.WriteString("0")
 	}
-	if dice.Multiplier != 1 {
+	if multiplier != 1 {
 		buffer.WriteString("x")
-		buffer.WriteString(strconv.Itoa(dice.Multiplier))
+		buffer.WriteString(strconv.Itoa(multiplier))
 	}
 	return buffer.String()
 }
@@ -278,19 +290,20 @@ func (dice *Dice) StringExtra(extraDiceFromModifiers bool) string {
 // ApplyExtraDiceFromModifiers alters the Dice, converting modifiers greater than or equal to the average result of the
 // base die to extra dice. For example, 1d6+8 will become 3d6+1.
 func (dice *Dice) ApplyExtraDiceFromModifiers() {
-	dice.Count, dice.Modifier = dice.adjustedCountAndModifier(true)
+	dice.Count, dice.Sides, dice.Modifier, dice.Multiplier = dice.adjustedValues(true)
 }
 
-func (dice *Dice) adjustedCountAndModifier(applyExtractDiceFromModifiers bool) (count, modifier int) {
-	dice.Normalize()
-	if dice.Sides == 0 {
-		return dice.Count, dice.Modifier
+// adjustedValues returns the field values clamped to their permitted ranges, optionally converting modifiers to extra
+// dice. It does not modify the receiver, so it is safe to call on Dice whose exported fields have been set directly to
+// out-of-range values.
+func (dice *Dice) adjustedValues(applyExtraDiceFromModifiers bool) (count, sides, modifier, multiplier int) {
+	count, sides, modifier, multiplier = dice.clamped()
+	if sides == 0 {
+		return count, sides, modifier, multiplier
 	}
-	count = dice.Count
-	modifier = dice.Modifier
-	if applyExtractDiceFromModifiers && modifier > 0 {
-		average := (dice.Sides + 1) / 2
-		if dice.Sides&1 == 1 {
+	if applyExtraDiceFromModifiers && modifier > 0 {
+		average := (sides + 1) / 2
+		if sides&1 == 1 {
 			// Odd number of sides, so average is a whole number
 			count += modifier / average
 			modifier %= average
@@ -298,7 +311,7 @@ func (dice *Dice) adjustedCountAndModifier(applyExtractDiceFromModifiers bool) (
 			// Even number of sides, so each die's true average is average+0.5. A pair of dice therefore consumes
 			// exactly 2*average+1 of the modifier and a lone die consumes average+1 (rounding the trailing half up).
 			// Compute the whole-pair and optional trailing-die counts directly; doing it by subtracting in a loop is
-			// O(modifier), which hangs when the modifier has saturated to math.MaxInt.
+			// O(modifier), which is needlessly slow when the modifier is near its cap.
 			perPair := 2*average + 1
 			count += 2 * (modifier / perPair)
 			modifier %= perPair
@@ -307,24 +320,23 @@ func (dice *Dice) adjustedCountAndModifier(applyExtractDiceFromModifiers bool) (
 				modifier -= average + 1
 			}
 		}
+		count = min(count, MaxValue) // Converting a large modifier can push the count past its maximum.
 	}
-	if count < 0 {
-		count = 0
-	}
-	return count, modifier
+	return count, sides, modifier, multiplier
 }
 
-// Normalize the internal state.
+// clamped returns each field constrained to its permitted range without modifying the receiver. Because the fields are
+// exported, callers may set them to any value, so every use must clamp rather than assume a valid range.
+func (dice *Dice) clamped() (count, sides, modifier, multiplier int) {
+	return min(max(dice.Count, 0), MaxValue),
+		min(max(dice.Sides, 0), MaxValue),
+		min(max(dice.Modifier, MinValue), MaxValue),
+		min(max(dice.Multiplier, 1), MaxValue)
+}
+
+// Normalize the internal state, clamping each field to its permitted range.
 func (dice *Dice) Normalize() {
-	if dice.Count < 0 {
-		dice.Count = 0
-	}
-	if dice.Sides < 0 {
-		dice.Sides = 0
-	}
-	if dice.Multiplier < 1 {
-		dice.Multiplier = 1
-	}
+	dice.Count, dice.Sides, dice.Modifier, dice.Multiplier = dice.clamped()
 }
 
 // MarshalText implements the encoding.TextMarshaler interface.
@@ -350,15 +362,15 @@ func (dice *Dice) IsEquivalent(other *Dice) bool {
 
 // PoolProbability return the probability that at least one die will be equal to or greater than the target value.
 func (dice *Dice) PoolProbability(target int) float64 {
-	dice.Normalize()
-	if dice.Count < 1 || dice.Sides < 1 || dice.Sides < target {
+	count, sides, _, _ := dice.clamped()
+	if count < 1 || sides < 1 || sides < target {
 		return 0
 	}
 	if target < 1 {
 		// Every die rolls at least 1, so a non-positive target is always met.
 		return 1
 	}
-	return 1 - math.Pow(1-float64(1+dice.Sides-target)/float64(dice.Sides), float64(dice.Count))
+	return 1 - math.Pow(1-float64(1+sides-target)/float64(sides), float64(count))
 }
 
 // Hash writes this object's contents into the hasher.
@@ -368,8 +380,9 @@ func (dice *Dice) Hash(h hash.Hash) {
 	if dice == nil {
 		return
 	}
-	_ = binary.Write(h, binary.LittleEndian, int64(dice.Count))
-	_ = binary.Write(h, binary.LittleEndian, int64(dice.Sides))
-	_ = binary.Write(h, binary.LittleEndian, int64(dice.Modifier))
-	_ = binary.Write(h, binary.LittleEndian, int64(dice.Multiplier))
+	count, sides, modifier, multiplier := dice.clamped()
+	_ = binary.Write(h, binary.LittleEndian, int64(count))
+	_ = binary.Write(h, binary.LittleEndian, int64(sides))
+	_ = binary.Write(h, binary.LittleEndian, int64(modifier))
+	_ = binary.Write(h, binary.LittleEndian, int64(multiplier))
 }
