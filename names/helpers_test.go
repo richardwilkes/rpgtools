@@ -10,6 +10,7 @@
 package names
 
 import (
+	"math/rand/v2"
 	"testing"
 
 	"github.com/richardwilkes/toolbox/v2/check"
@@ -27,6 +28,23 @@ func (c constRand) Intn(n int) int {
 		return v
 	}
 	return n - 1
+}
+
+// seededRand is a deterministic Randomizer backed by a fixed seed. Unlike constRand it produces a varied sequence, so
+// the value returned for a given draw lands on different cumulative-weight boundaries and the generated names depend on
+// the order of the transition and length tables. This lets a test detect non-reproducible table ordering.
+type seededRand struct{ r *rand.Rand }
+
+// A deterministic, reproducible sequence is exactly what this test helper needs, so the weak generator is intentional.
+func newSeededRand(seed uint64) *seededRand {
+	return &seededRand{r: rand.New(rand.NewPCG(seed, seed))} //nolint:gosec // deterministic sequence is the point
+}
+
+func (s *seededRand) Intn(n int) int {
+	if n <= 0 {
+		return 0
+	}
+	return s.r.IntN(n)
 }
 
 func TestApplyCase(t *testing.T) {

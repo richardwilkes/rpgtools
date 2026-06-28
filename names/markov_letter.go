@@ -12,6 +12,7 @@ package names
 import (
 	"iter"
 	"maps"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -146,8 +147,10 @@ func (n *MarkovLetterNamer) GenerateNameWithRandomizer(rnd xrand.Randomizer) str
 func computeLengths(lengths map[int]int) (result [][2]int, maxLength int) {
 	result = make([][2]int, 0, len(lengths))
 	total := 0
-	for length, count := range lengths {
-		total += count
+	// Accumulate in sorted length order so that a given seeded randomizer reproduces the same length selection across
+	// process runs rather than depending on Go's randomized map iteration order.
+	for _, length := range slices.Sorted(maps.Keys(lengths)) {
+		total += lengths[length]
 		result = append(result, [2]int{length, total})
 		maxLength = max(maxLength, length)
 	}

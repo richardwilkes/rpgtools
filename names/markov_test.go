@@ -52,6 +52,45 @@ func TestMarkovRunLengthWeighting(t *testing.T) {
 	c.Equal(8, n.lengths[len(n.lengths)-1][1])
 }
 
+func TestMarkovReproducibleAcrossBuilds(t *testing.T) {
+	c := check.New(t)
+	// Go randomizes map iteration order on every range, so rebuilding a namer from identical data exercises different
+	// orderings of each transition's next-items and of the length buckets. The cumulative-weight tables, and therefore
+	// the names a seeded randomizer produces, must not depend on that order; otherwise the same training data and seed
+	// yield different names from one process run to the next. The data has many distinct first letters and runs so a
+	// non-deterministic ordering would almost certainly change the output.
+	data := map[string]int{
+		"alpha": 1, "bravo": 2, "charlie": 3, "delta": 1, "echo": 2,
+		"foxtrot": 3, "golf": 1, "hotel": 2, "india": 3, "juliet": 1,
+		"kilo": 2, "lima": 3, "mike": 1, "november": 2, "oscar": 3,
+	}
+	const seed, samples = 42, 50
+	letterNames := func() []string {
+		n := NewMarkovLetterNamer(2, data, false, false)
+		rnd := newSeededRand(seed)
+		out := make([]string, samples)
+		for i := range out {
+			out[i] = n.GenerateNameWithRandomizer(rnd)
+		}
+		return out
+	}
+	runNames := func() []string {
+		n := NewMarkovRunNamer(data, false, false)
+		rnd := newSeededRand(seed)
+		out := make([]string, samples)
+		for i := range out {
+			out[i] = n.GenerateNameWithRandomizer(rnd)
+		}
+		return out
+	}
+	letterWant := letterNames()
+	runWant := runNames()
+	for range 20 {
+		c.Equal(letterWant, letterNames(), "letter namer output must be reproducible across rebuilds")
+		c.Equal(runWant, runNames(), "run namer output must be reproducible across rebuilds")
+	}
+}
+
 func TestMarkovGeneratesFromData(t *testing.T) {
 	c := check.New(t)
 	// Sanity check that, given real data, the namers actually produce non-empty

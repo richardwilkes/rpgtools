@@ -10,7 +10,10 @@
 package names
 
 import (
+	"cmp"
 	"iter"
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/richardwilkes/toolbox/v2/xrand"
@@ -71,14 +74,17 @@ func pickWeighted[T any](entries []T, rnd xrand.Randomizer, cumulativeOf func(T)
 }
 
 // cumulativePairs converts a transition table of per-item counts into one of per-item cumulative weights suitable for
-// pickWeighted. makePair builds the stored pair from an item and its running cumulative total.
-func cumulativePairs[K, V comparable, P any](source map[K]map[V]int, makePair func(item V, cumulative int) P) map[K][]P {
+// pickWeighted. makePair builds the stored pair from an item and its running cumulative total. Items are accumulated in
+// sorted order so that a given seeded randomizer reproduces the same selections across process runs; iterating the map
+// in Go's randomized order would otherwise vary how the cumulative weights line up with the runs, and thus the
+// generated names, from one run to the next.
+func cumulativePairs[K comparable, V cmp.Ordered, P any](source map[K]map[V]int, makePair func(item V, cumulative int) P) map[K][]P {
 	result := make(map[K][]P, len(source))
 	for key, counts := range source {
 		total := 0
 		pairs := make([]P, 0, len(counts))
-		for item, count := range counts {
-			total += count
+		for _, item := range slices.Sorted(maps.Keys(counts)) {
+			total += counts[item]
 			pairs = append(pairs, makePair(item, total))
 		}
 		result[key] = pairs
