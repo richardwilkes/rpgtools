@@ -80,6 +80,9 @@ func (n *SimpleNamer) GenerateName() string {
 
 // GenerateNameWithRandomizer generates a new random name using the specified randomizer.
 func (n *SimpleNamer) GenerateNameWithRandomizer(rnd xrand.Randomizer) string {
+	if len(n.data) == 0 {
+		return ""
+	}
 	v := 1 + rnd.Intn(n.total)
 	for i := range n.data {
 		if v -= n.data[i].count; v < 1 {
@@ -87,9 +90,6 @@ func (n *SimpleNamer) GenerateNameWithRandomizer(rnd xrand.Randomizer) string {
 		}
 	}
 	// Should not be reachable
-	if len(n.data) == 0 {
-		return ""
-	}
 	return n.finish(n.data[0].name)
 }
 
