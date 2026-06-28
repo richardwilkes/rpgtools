@@ -317,6 +317,35 @@ func TestMarshaling(t *testing.T) {
 	c.Equal("date: 9/22/2017\n", string(text))
 }
 
+func TestZeroValueDate(t *testing.T) {
+	c := check.New(t)
+	cal := calendar.Gregorian()
+	calendar.Default = cal
+
+	// A zero-value Date has no associated calendar; accessors and formatting must fall back to
+	// Default rather than panicking with a nil pointer dereference (mirroring UnmarshalText).
+	var date calendar.Date
+	c.NotPanics(func() {
+		c.Equal(1, date.Year())
+		c.Equal(1, date.Month())
+		c.Equal(1, date.DayInMonth())
+		c.Equal(cal.WeekDays[date.WeekDay()], date.WeekDayName())
+		c.Equal("1/1/1", date.String())
+	})
+
+	text, err := date.MarshalText()
+	c.NoError(err)
+	c.Equal("1/1/1", string(text))
+
+	// json.Marshal of a struct holding an unset Date field must not panic.
+	type embedded struct {
+		Date calendar.Date
+	}
+	text, err = json.Marshal(&embedded{})
+	c.NoError(err)
+	c.Equal(`{"Date":"1/1/1"}`, string(text))
+}
+
 func TestUnmarshaling(t *testing.T) {
 	c := check.New(t)
 	cal := calendar.Gregorian()

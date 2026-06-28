@@ -32,17 +32,27 @@ type Date struct {
 	Days int
 }
 
+// calendar returns the calendar associated with the date, falling back to Default for a zero-value Date that was never
+// associated with a calendar. This mirrors the behavior of UnmarshalText.
+func (date Date) calendar() *Calendar {
+	if date.cal == nil {
+		return Default
+	}
+	return date.cal
+}
+
 // Year returns the year of the date.
 func (date Date) Year() int {
-	estimate := date.Days / date.cal.MinDaysPerYear()
+	cal := date.calendar()
+	estimate := date.Days / cal.MinDaysPerYear()
 	if date.Days < 0 {
 		estimate--
-		for date.Days >= date.cal.yearToDays(estimate+1) {
+		for date.Days >= cal.yearToDays(estimate+1) {
 			estimate++
 		}
 	} else {
 		estimate++
-		for date.Days < date.cal.yearToDays(estimate) {
+		for date.Days < cal.yearToDays(estimate) {
 			estimate--
 		}
 	}
@@ -51,11 +61,12 @@ func (date Date) Year() int {
 
 // Month returns the month of the date. Note that the first month is represented by 1, not 0.
 func (date Date) Month() int {
-	isLeapYear := date.cal.IsLeapYear(date.Year())
+	cal := date.calendar()
+	isLeapYear := cal.IsLeapYear(date.Year())
 	days := date.DayInYear()
-	for i, month := range date.cal.Months {
+	for i, month := range cal.Months {
 		amt := month.Days
-		if isLeapYear && date.cal.IsLeapMonth(i+1) {
+		if isLeapYear && cal.IsLeapMonth(i+1) {
 			amt++
 		}
 		if days <= amt {
@@ -69,21 +80,22 @@ func (date Date) Month() int {
 
 // MonthName returns the name of the month of the date.
 func (date Date) MonthName() string {
-	return date.cal.Months[date.Month()-1].Name
+	return date.calendar().Months[date.Month()-1].Name
 }
 
 // DayInYear returns the day within the year of the date. Note that the first day is represented by a 1, not 0.
 func (date Date) DayInYear() int {
-	return 1 + date.Days - date.cal.yearToDays(date.Year())
+	return 1 + date.Days - date.calendar().yearToDays(date.Year())
 }
 
 // DayInMonth returns the day within the month of the date. Note that the first day is represented by a 1, not 0.
 func (date Date) DayInMonth() int {
-	isLeapYear := date.cal.IsLeapYear(date.Year())
+	cal := date.calendar()
+	isLeapYear := cal.IsLeapYear(date.Year())
 	days := date.DayInYear()
-	for i, month := range date.cal.Months {
+	for i, month := range cal.Months {
 		amt := month.Days
-		if isLeapYear && date.cal.IsLeapMonth(i+1) {
+		if isLeapYear && cal.IsLeapMonth(i+1) {
 			amt++
 		}
 		if days <= amt {
@@ -97,9 +109,10 @@ func (date Date) DayInMonth() int {
 
 // DaysInMonth returns the number of days in the month of the date.
 func (date Date) DaysInMonth() int {
+	cal := date.calendar()
 	month := date.Month()
-	days := date.cal.Months[month-1].Days
-	if date.cal.IsLeapYear(date.Year()) && date.cal.IsLeapMonth(month) {
+	days := cal.Months[month-1].Days
+	if cal.IsLeapYear(date.Year()) && cal.IsLeapMonth(month) {
 		days++
 	}
 	return days
@@ -107,24 +120,26 @@ func (date Date) DaysInMonth() int {
 
 // WeekDay returns the weekday of the date.
 func (date Date) WeekDay() int {
-	weekday := date.Days % len(date.cal.WeekDays)
+	cal := date.calendar()
+	weekday := date.Days % len(cal.WeekDays)
 	if date.Days < 0 {
-		weekday += len(date.cal.WeekDays)
+		weekday += len(cal.WeekDays)
 	}
-	return (weekday + date.cal.DayZeroWeekDay) % len(date.cal.WeekDays)
+	return (weekday + cal.DayZeroWeekDay) % len(cal.WeekDays)
 }
 
 // WeekDayName returns the name of the weekday of the date.
 func (date Date) WeekDayName() string {
-	return date.cal.WeekDays[date.WeekDay()]
+	return date.calendar().WeekDays[date.WeekDay()]
 }
 
 // Era returns the era suffix for the year.
 func (date Date) Era() string {
+	cal := date.calendar()
 	if date.Year() < 0 {
-		return date.cal.PreviousEra
+		return cal.PreviousEra
 	}
-	return date.cal.Era
+	return cal.Era
 }
 
 // String returns a date in the ShortFormat.
@@ -139,11 +154,7 @@ func (date Date) MarshalText() ([]byte, error) {
 
 // UnmarshalText implements encoding.TextUnmarshaler.
 func (date *Date) UnmarshalText(text []byte) error {
-	cal := date.cal
-	if cal == nil {
-		cal = Default
-	}
-	d, err := cal.ParseDate(string(text))
+	d, err := date.calendar().ParseDate(string(text))
 	if err != nil {
 		return err
 	}
@@ -176,6 +187,7 @@ func (date Date) Format(layout string) string {
 //	%z  Year without the era, e.g. '2017' or '-2017'
 //	%%  %
 func (date Date) WriteFormat(w io.Writer, layout string) {
+	cal := date.calendar()
 	cmd := false
 	for _, r := range layout {
 		switch {
@@ -193,19 +205,19 @@ func (date Date) WriteFormat(w io.Writer, layout string) {
 			case 'N':
 				fmt.Fprint(w, date.Month())
 			case 'n':
-				fmt.Fprintf(w, "%0[1]*[2]d", widthNeeded(len(date.cal.Months)), date.Month())
+				fmt.Fprintf(w, "%0[1]*[2]d", widthNeeded(len(cal.Months)), date.Month())
 			case 'D':
 				fmt.Fprint(w, date.DayInMonth())
 			case 'd':
 				fmt.Fprintf(w, "%0[1]*[2]d", widthNeeded(date.DaysInMonth()), date.DayInMonth())
 			case 'Y':
 				year := date.Year()
-				if date.cal.PreviousEra != "" {
+				if cal.PreviousEra != "" {
 					switch {
-					case date.cal.Era == date.cal.PreviousEra:
-						fmt.Fprintf(w, "%d %s", year, date.cal.PreviousEra)
+					case cal.Era == cal.PreviousEra:
+						fmt.Fprintf(w, "%d %s", year, cal.PreviousEra)
 					case year < 0:
-						fmt.Fprintf(w, "%d %s", -year, date.cal.PreviousEra)
+						fmt.Fprintf(w, "%d %s", -year, cal.PreviousEra)
 					default:
 						fmt.Fprint(w, year)
 					}
@@ -215,7 +227,7 @@ func (date Date) WriteFormat(w io.Writer, layout string) {
 			case 'y':
 				era := date.Era()
 				year := date.Year()
-				if year < 0 && era != "" && date.cal.Era != date.cal.PreviousEra {
+				if year < 0 && era != "" && cal.Era != cal.PreviousEra {
 					year = -year
 				}
 				if era != "" {
@@ -247,16 +259,17 @@ func widthNeeded(count int) int {
 
 // TextCalendarMonth writes a text representation of the month.
 func (date Date) TextCalendarMonth(w io.Writer) {
+	cal := date.calendar()
 	mostDays := 0
-	for _, m := range date.cal.Months {
+	for _, m := range cal.Months {
 		if mostDays < m.Days {
 			mostDays = m.Days
 		}
 	}
 	fmt.Fprintf(w, "%d: %s", date.Month(), date.MonthName())
-	lastDayOfWeek := len(date.cal.WeekDays) - 1
+	lastDayOfWeek := len(cal.WeekDays) - 1
 	width := len(fmt.Sprintf("%d", mostDays))
-	for i, weekday := range date.cal.WeekDays {
+	for i, weekday := range cal.WeekDays {
 		if i == 0 {
 			fmt.Fprint(w, "\n")
 		} else {
@@ -272,7 +285,7 @@ func (date Date) TextCalendarMonth(w io.Writer) {
 	month := date.Month()
 	numFmt := fmt.Sprintf("%%%dd", width)
 	for i := 1; i <= maximum; i++ {
-		d := date.cal.MustNewDate(month, i, year)
+		d := cal.MustNewDate(month, i, year)
 		weekDay := d.WeekDay()
 		if i == 1 || weekDay == 0 {
 			fmt.Fprint(w, "\n")
