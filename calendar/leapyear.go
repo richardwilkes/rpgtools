@@ -70,25 +70,35 @@ func (leapYear *LeapYear) Is(year int) bool {
 
 // Since returns the number of leap years that have occurred between year 1 and the specified year, exclusive.
 func (leapYear *LeapYear) Since(year int) int {
-	if year == -1 {
-		return 0
+	if year >= 1 {
+		return leapYear.countLeaps(year - 1)
 	}
-	delta := year
-	if delta < 1 {
-		delta = -(delta + 1) // make it positive and account for gap, since there is no year 0
+	// There is no year 0, so the years strictly between year and 1 run year+1..-1. Is() derives a negative year's leap
+	// status from the magnitude |year+1|, so those years map to magnitudes 0..(-year-2). countLeaps covers magnitudes 1
+	// and up; magnitude 0 (year -1) is added on separately because whether it is a leap year depends on the
+	// Except/Unless rule, which is exactly what Is(-1) reports.
+	upper := -year - 2
+	if upper < 0 {
+		return 0 // year == -1: nothing lies strictly between it and year 1
 	}
-	count := delta / leapYear.Every
-	if leapYear.Except != 0 {
-		count -= delta / leapYear.Except
-		if leapYear.Unless != 0 {
-			count += delta / leapYear.Unless
-		}
-	}
-	if leapYear.Is(year) {
-		count--
-	}
-	if year < -1 {
+	count := leapYear.countLeaps(upper)
+	if leapYear.Is(-1) {
 		count++
+	}
+	return count
+}
+
+// countLeaps returns the number of leap years whose magnitude (distance from the leap pattern's origin) is 1 through n
+// inclusive. The leap pattern is symmetric about the origin, so the same closed form serves positive years directly and
+// negative years via their shifted magnitude. n must not be negative. Valid guarantees every multiple of Except is a
+// multiple of Every and every multiple of Unless is a multiple of Except, so dividing counts each tier independently.
+func (leapYear *LeapYear) countLeaps(n int) int {
+	count := n / leapYear.Every
+	if leapYear.Except != 0 {
+		count -= n / leapYear.Except
+		if leapYear.Unless != 0 {
+			count += n / leapYear.Unless
+		}
 	}
 	return count
 }
