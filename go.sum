@@ -1,5 +1,5 @@
-github.com/richardwilkes/toolbox/v2 v2.9.0 h1:Sg9VW4dGjslLIPDFkidw1pSbY2FF/b9h/JwngssHOYM=
-github.com/richardwilkes/toolbox/v2 v2.9.0/go.mod h1:YgikCN2mIxiaZQTbzuJJtnWcDqqKSihh4qTIswr80O0=
+github.com/richardwilkes/toolbox/v2 v2.14.0 h1:TjK/3tMQKRm6jPO5C2fx3E/3G8MlmHFUv5AtGylWeek=
+github.com/richardwilkes/toolbox/v2 v2.14.0/go.mod h1:c+FJfJNHFQBT6C46W+0K2DKtXiPNZdKSMehwoBarw4U=
 gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405 h1:yhCVgyC4o1eVCa2tZl7eS0r+SDo693bJlVdllGtEeKM=
 gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405/go.mod h1:Co6ibVJAznAaIkqp8huTwlJQCZ016jof/cbN4VW5Yz0=
 gopkg.in/yaml.v3 v3.0.1 h1:fxVm/GzAzEWqLHuvctI91KS9hhNmmWOoWu0XTYJS7CA=
