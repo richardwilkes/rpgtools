@@ -228,7 +228,7 @@ func (dice *Dice) RollWithRandomizer(rnd xrand.Randomizer, extraDiceFromModifier
 			result += 1 + rnd.Intn(dice.Sides)
 		}
 	case dice.Sides == 1:
-		result = count
+		result += count
 	}
 	return result * dice.Multiplier
 }

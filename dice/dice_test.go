@@ -93,6 +93,28 @@ func TestApplyExtraDiceFromModifiersAfter(t *testing.T) {
 	}
 }
 
+func TestRollSingleSided(t *testing.T) {
+	c := check.New(t)
+	// One-sided dice are deterministic, so a roll must match the min/max and must
+	// include any modifier rather than discarding it.
+	for i, one := range []struct {
+		Text     string
+		Expected int
+	}{
+		{"2d1", 2},      // 0
+		{"2d1+3", 5},    // 1
+		{"1d1+5", 6},    // 2
+		{"3d1-1", 2},    // 3
+		{"2d1+3x2", 10}, // 4
+	} {
+		desc := fmt.Sprintf("Table index %d: %s", i, one.Text)
+		d := dice.New(one.Text)
+		c.Equal(one.Expected, d.Roll(false), desc)
+		c.Equal(one.Expected, d.Minimum(false), desc)
+		c.Equal(one.Expected, d.Maximum(false), desc)
+	}
+}
+
 func TestExtractFirstPosition(t *testing.T) {
 	c := check.New(t)
 	for i, one := range []struct {
