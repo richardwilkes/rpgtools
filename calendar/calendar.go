@@ -218,6 +218,13 @@ func (cal *Calendar) parseDate(month int, dayText, yearText, eraText string) (Da
 		return Date{cal: cal}, errs.NewWithCausef(err, "invalid day text '%s'", dayText)
 	}
 	if cal.PreviousEra != "" && cal.PreviousEra != cal.Era && strings.EqualFold(cal.PreviousEra, eraText) {
+		// A leading minus sign and the previous-era suffix both place the year before the current era, so
+		// accepting both would double-negate the year back into the current era. Reject the contradiction rather
+		// than silently pick one interpretation.
+		if year < 0 {
+			return Date{cal: cal}, errs.Newf("year '%s' and previous-era suffix '%s' both indicate the previous era",
+				yearText, eraText)
+		}
 		year = -year
 	}
 	return cal.NewDate(month, day, year)

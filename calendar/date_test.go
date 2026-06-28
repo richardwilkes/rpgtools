@@ -311,6 +311,16 @@ func TestParseDate(t *testing.T) {
 	date, err = cal.ParseDate("September 22, -2017")
 	c.NoError(err)
 	c.Equal(targetDate, date)
+	date, err = cal.ParseDate("9/22/2017 BC")
+	c.NoError(err)
+	c.Equal(targetDate, date)
+
+	// A negative year combined with a previous-era suffix is contradictory and must not double-negate back into
+	// the current era.
+	_, err = cal.ParseDate("9/22/-2017 BC")
+	c.HasError(err)
+	_, err = cal.ParseDate("September 22, -2017 BC")
+	c.HasError(err)
 }
 
 func TestParseDateAmbiguousMonthAbbreviation(t *testing.T) {
