@@ -97,8 +97,12 @@ func extractValue(in string, inPos int) (value, outPos int) {
 		if ch < '0' || ch > '9' {
 			return value, inPos
 		}
-		value *= 10
-		value += int(ch - '0')
+		digit := int(ch - '0')
+		if value > (math.MaxInt-digit)/10 {
+			value = math.MaxInt // Saturate rather than overflow on an absurdly long number.
+		} else {
+			value = value*10 + digit
+		}
 		inPos++
 	}
 	return value, inPos

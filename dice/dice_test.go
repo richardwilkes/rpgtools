@@ -202,6 +202,34 @@ func TestPoolProbability(t *testing.T) {
 	}
 }
 
+func TestExtractValueOverflow(t *testing.T) {
+	c := check.New(t)
+	const huge = "99999999999999999999" // 20 nines: larger than math.MaxInt, which would otherwise wrap
+
+	// Each numeric field saturates at math.MaxInt rather than wrapping to a negative or garbage value, and parsing
+	// still continues past the oversized number.
+	d := dice.New(huge + "d6")
+	c.Equal(math.MaxInt, d.Count)
+	c.Equal(6, d.Sides)
+
+	d = dice.New("3d" + huge)
+	c.Equal(3, d.Count)
+	c.Equal(math.MaxInt, d.Sides)
+
+	d = dice.New("d6+" + huge)
+	c.Equal(math.MaxInt, d.Modifier)
+
+	d = dice.New("2d6x" + huge)
+	c.Equal(math.MaxInt, d.Multiplier)
+
+	// Normal values are unaffected.
+	d = dice.New("3d6+2x4")
+	c.Equal(3, d.Count)
+	c.Equal(6, d.Sides)
+	c.Equal(2, d.Modifier)
+	c.Equal(4, d.Multiplier)
+}
+
 func TestExtractFirstPosition(t *testing.T) {
 	c := check.New(t)
 	for i, one := range []struct {
