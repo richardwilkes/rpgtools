@@ -72,7 +72,7 @@ func pickWeighted[T any](entries []T, rnd xrand.Randomizer, cumulativeOf func(T)
 
 // cumulativePairs converts a transition table of per-item counts into one of per-item cumulative weights suitable for
 // pickWeighted. makePair builds the stored pair from an item and its running cumulative total.
-func cumulativePairs[K comparable, V comparable, P any](source map[K]map[V]int, makePair func(item V, cumulative int) P) map[K][]P {
+func cumulativePairs[K, V comparable, P any](source map[K]map[V]int, makePair func(item V, cumulative int) P) map[K][]P {
 	result := make(map[K][]P, len(source))
 	for key, counts := range source {
 		total := 0

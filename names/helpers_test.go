@@ -61,6 +61,7 @@ func TestPickWeighted(t *testing.T) {
 	c.False(ok)
 }
 
+//nolint:goconst // The tests are more readable without constants for duplicated string
 func TestUnweightedConstructorsCountDuplicates(t *testing.T) {
 	c := check.New(t)
 	// A name repeated in an unweighted slice must count once per occurrence rather than being collapsed to a single

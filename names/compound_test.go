@@ -22,6 +22,7 @@ type fixedNamer string
 func (f fixedNamer) GenerateName() string                                 { return string(f) }
 func (f fixedNamer) GenerateNameWithRandomizer(_ xrand.Randomizer) string { return string(f) }
 
+//nolint:goconst // The tests are more readable without constants for duplicated string
 func TestCompoundSkipsNilNamers(t *testing.T) {
 	c := check.New(t)
 	a := fixedNamer("A")
