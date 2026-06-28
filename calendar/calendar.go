@@ -169,14 +169,37 @@ func (cal *Calendar) ParseDate(in string) (Date, error) {
 		return cal.parseDate(month, parts[2], parts[3], parts[4])
 	}
 	if parts := regexMonthDDYYYY.FindStringSubmatch(in); parts != nil {
-		for i, month := range cal.Months {
-			if strings.EqualFold(parts[1], month.Name) || strings.EqualFold(parts[1], xstrings.FirstN(month.Name, 3)) {
-				return cal.parseDate(i+1, parts[2], parts[3], parts[4])
-			}
+		month, err := cal.monthFromText(parts[1])
+		if err != nil {
+			return Date{cal: cal}, err
 		}
-		return Date{cal: cal}, errs.Newf("invalid month text '%s'", parts[1])
+		return cal.parseDate(month, parts[2], parts[3], parts[4])
 	}
 	return Date{cal: cal}, errs.Newf("invalid date text '%s'", in)
+}
+
+// monthFromText resolves a month name to its 1-based index. A full-name match is preferred; failing that, a 3-letter
+// abbreviation is accepted only when it unambiguously identifies a single month, since two months whose names share the
+// same first three letters cannot otherwise be told apart.
+func (cal *Calendar) monthFromText(text string) (int, error) {
+	for i := range cal.Months {
+		if strings.EqualFold(text, cal.Months[i].Name) {
+			return i + 1, nil
+		}
+	}
+	month := 0
+	for i := range cal.Months {
+		if strings.EqualFold(text, xstrings.FirstN(cal.Months[i].Name, 3)) {
+			if month != 0 {
+				return 0, errs.Newf("ambiguous month text '%s'", text)
+			}
+			month = i + 1
+		}
+	}
+	if month == 0 {
+		return 0, errs.Newf("invalid month text '%s'", text)
+	}
+	return month, nil
 }
 
 func (cal *Calendar) parseDate(month int, dayText, yearText, eraText string) (Date, error) {

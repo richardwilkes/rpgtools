@@ -313,6 +313,40 @@ func TestParseDate(t *testing.T) {
 	c.Equal(targetDate, date)
 }
 
+func TestParseDateAmbiguousMonthAbbreviation(t *testing.T) {
+	c := check.New(t)
+	// "Marbol" and "Martok" share the first three letters, so the abbreviation "Mar" cannot identify either one.
+	cal := &calendar.Calendar{
+		WeekDays: []string{"One", "Two", "Three", "Four", "Five"},
+		Months: []calendar.Month{
+			{Name: "Marbol", Days: 30},
+			{Name: "Martok", Days: 30},
+			{Name: "June", Days: 30},
+		},
+	}
+
+	// The ambiguous abbreviation must be rejected rather than silently resolving to the first match.
+	_, err := cal.ParseDate("Mar 5, 1200")
+	c.HasError(err)
+	c.True(strings.Contains(err.Error(), "ambiguous"), "expected an ambiguity error, got: %v", err)
+
+	// Full names disambiguate, each resolving to its own month.
+	date, err := cal.ParseDate("Marbol 5, 1200")
+	c.NoError(err)
+	c.Equal(1, date.Month())
+	date, err = cal.ParseDate("Martok 5, 1200")
+	c.NoError(err)
+	c.Equal(2, date.Month())
+
+	// An abbreviation that is unique still works, as does the full name.
+	date, err = cal.ParseDate("Jun 5, 1200")
+	c.NoError(err)
+	c.Equal(3, date.Month())
+	date, err = cal.ParseDate("June 5, 1200")
+	c.NoError(err)
+	c.Equal(3, date.Month())
+}
+
 func TestMarshaling(t *testing.T) {
 	c := check.New(t)
 	cal := calendar.Gregorian()
