@@ -44,38 +44,48 @@ func (date Date) calendar() *Calendar {
 // Year returns the year of the date.
 func (date Date) Year() int {
 	cal := date.calendar()
-	estimate := date.Days / cal.MinDaysPerYear()
+	minDays := cal.MinDaysPerYear()
+	estimate := date.Days / minDays
 	if date.Days < 0 {
 		estimate--
-		for date.Days >= cal.yearToDays(estimate+1) {
+		for date.Days >= cal.yearToDaysWith(estimate+1, minDays) {
 			estimate++
 		}
 	} else {
 		estimate++
-		for date.Days < cal.yearToDays(estimate) {
+		for date.Days < cal.yearToDaysWith(estimate, minDays) {
 			estimate--
 		}
 	}
 	return estimate
 }
 
-// Month returns the month of the date. Note that the first month is represented by 1, not 0.
-func (date Date) Month() int {
+// resolve returns the year, month (1-based), day within the month (1-based), and the number of days in that month from
+// a single Year computation and a single walk over the months. The individual accessors delegate here so they do not
+// each recompute the relatively expensive Year.
+func (date Date) resolve() (year, month, dayInMonth, daysInMonth int) {
 	cal := date.calendar()
-	isLeapYear := cal.IsLeapYear(date.Year())
-	days := date.DayInYear()
-	for i, month := range cal.Months {
-		amt := month.Days
+	year = date.Year()
+	isLeapYear := cal.IsLeapYear(year)
+	days := 1 + date.Days - cal.yearToDays(year)
+	for i := range cal.Months {
+		amt := cal.Months[i].Days
 		if isLeapYear && cal.IsLeapMonth(i+1) {
 			amt++
 		}
 		if days <= amt {
-			return i + 1
+			return year, i + 1, days, amt
 		}
 		days -= amt
 	}
 	// If this is reached, the algorithm is wrong.
 	panic("Unable to determine month") // @allow
+}
+
+// Month returns the month of the date. Note that the first month is represented by 1, not 0.
+func (date Date) Month() int {
+	_, month, _, _ := date.resolve()
+	return month
 }
 
 // MonthName returns the name of the month of the date.
@@ -90,32 +100,14 @@ func (date Date) DayInYear() int {
 
 // DayInMonth returns the day within the month of the date. Note that the first day is represented by a 1, not 0.
 func (date Date) DayInMonth() int {
-	cal := date.calendar()
-	isLeapYear := cal.IsLeapYear(date.Year())
-	days := date.DayInYear()
-	for i, month := range cal.Months {
-		amt := month.Days
-		if isLeapYear && cal.IsLeapMonth(i+1) {
-			amt++
-		}
-		if days <= amt {
-			return days
-		}
-		days -= amt
-	}
-	// If this is reached, the algorithm is wrong.
-	panic("Unable to determine day in month") // @allow
+	_, _, dayInMonth, _ := date.resolve()
+	return dayInMonth
 }
 
 // DaysInMonth returns the number of days in the month of the date.
 func (date Date) DaysInMonth() int {
-	cal := date.calendar()
-	month := date.Month()
-	days := cal.Months[month-1].Days
-	if cal.IsLeapYear(date.Year()) && cal.IsLeapMonth(month) {
-		days++
-	}
-	return days
+	_, _, _, daysInMonth := date.resolve()
+	return daysInMonth
 }
 
 // WeekDay returns the weekday of the date.
@@ -260,7 +252,8 @@ func widthNeeded(count int) int {
 // TextCalendarMonth writes a text representation of the month.
 func (date Date) TextCalendarMonth(w io.Writer) {
 	cal := date.calendar()
-	fmt.Fprintf(w, "%d: %s", date.Month(), date.MonthName())
+	year, month, _, maximum := date.resolve()
+	fmt.Fprintf(w, "%d: %s", month, cal.Months[month-1].Name)
 	lastDayOfWeek := len(cal.WeekDays) - 1
 	width := widthNeeded(cal.mostDaysInMonth())
 	for i, weekday := range cal.WeekDays {
@@ -274,13 +267,12 @@ func (date Date) TextCalendarMonth(w io.Writer) {
 		}
 		fmt.Fprint(w, xstrings.FirstN(weekday, 1))
 	}
-	maximum := date.DaysInMonth()
-	year := date.Year()
-	month := date.Month()
+	// Consecutive days differ only by one in Days, so derive the first day once and increment rather than rebuilding a
+	// fresh Date (with its year convergence and month summation) for every day of the month.
+	firstDay := cal.MustNewDate(month, 1, year).Days
 	numFmt := fmt.Sprintf("%%%dd", width)
 	for i := 1; i <= maximum; i++ {
-		d := cal.MustNewDate(month, i, year)
-		weekDay := d.WeekDay()
+		weekDay := Date{Days: firstDay + i - 1, cal: cal}.WeekDay()
 		if i == 1 || weekDay == 0 {
 			fmt.Fprint(w, "\n")
 		}

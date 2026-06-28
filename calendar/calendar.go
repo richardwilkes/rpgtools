@@ -139,11 +139,17 @@ func (cal *Calendar) NewDateByDays(days int) Date {
 }
 
 func (cal *Calendar) yearToDays(year int) int {
+	return cal.yearToDaysWith(year, cal.MinDaysPerYear())
+}
+
+// yearToDaysWith is yearToDays with the minimum days per year supplied by the caller, so that callers iterating over
+// candidate years (such as Date.Year) can hoist the O(months) MinDaysPerYear summation out of their loop.
+func (cal *Calendar) yearToDaysWith(year, minDaysPerYear int) int {
 	var days int
 	if year > 1 {
-		days = (year - 1) * cal.MinDaysPerYear()
+		days = (year - 1) * minDaysPerYear
 	} else if year < 0 {
-		days = year * cal.MinDaysPerYear()
+		days = year * minDaysPerYear
 	}
 	if cal.LeapYear != nil {
 		leaps := cal.LeapYear.Since(year)
