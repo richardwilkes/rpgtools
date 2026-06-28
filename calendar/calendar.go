@@ -217,6 +217,6 @@ func (cal *Calendar) Text(year int, w io.Writer) {
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Week Days:")
 	for i, weekday := range cal.WeekDays {
-		fmt.Fprintf(w, "  %d: (%s) %s\n", i+1, weekday[:1], weekday)
+		fmt.Fprintf(w, "  %d: (%s) %s\n", i+1, xstrings.FirstN(weekday, 1), weekday)
 	}
 }

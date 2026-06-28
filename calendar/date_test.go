@@ -10,8 +10,11 @@
 package calendar_test
 
 import (
+	"bytes"
 	"encoding/json"
+	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/richardwilkes/rpgtools/calendar"
 	"github.com/richardwilkes/rpgtools/calendar/pathfinder"
@@ -203,6 +206,39 @@ func TestFormatZeroPadded(t *testing.T) {
 	// slice and panic.
 	c.Equal("12/05", cal.MustNewDate(12, 5, 2017).Format("%n/%d"))
 	c.Equal("12/31", cal.MustNewDate(12, 31, 2017).Format("%n/%d"))
+}
+
+func TestTextMultiByteWeekDayNames(t *testing.T) {
+	c := check.New(t)
+	cal := calendar.Gregorian()
+	// Week day names whose first rune is multi-byte in UTF-8.
+	cal.WeekDays = []string{"Étoile", "Понедельник", "Δευτέρα", "三", "Mercredi", "木曜日", "Saturn"}
+	calendar.Default = cal
+
+	var buf bytes.Buffer
+	cal.Text(2017, &buf)
+	out := buf.String()
+	c.True(utf8.ValidString(out), "calendar text must remain valid UTF-8")
+	// The week day legend abbreviates each name to its first rune, not its first byte.
+	c.True(strings.Contains(out, "(É)"), "expected first-rune abbreviation '(É)' in:\n%s", out)
+	c.True(strings.Contains(out, "(三)"), "expected first-rune abbreviation '(三)' in:\n%s", out)
+
+	buf.Reset()
+	cal.MustNewDate(1, 1, 2017).TextCalendarMonth(&buf)
+	c.True(utf8.ValidString(buf.String()), "month text must remain valid UTF-8")
+}
+
+func TestTextEmptyWeekDayNameDoesNotPanic(t *testing.T) {
+	c := check.New(t)
+	cal := calendar.Gregorian()
+	// An empty week day name previously caused weekday[:1] to panic.
+	cal.WeekDays = []string{"", "B", "C", "D", "E", "F", "G"}
+	calendar.Default = cal
+
+	var buf bytes.Buffer
+	cal.Text(2017, &buf)
+	cal.MustNewDate(1, 1, 2017).TextCalendarMonth(&buf)
+	c.True(buf.Len() > 0)
 }
 
 func TestParseDate(t *testing.T) {

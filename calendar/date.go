@@ -265,7 +265,7 @@ func (date Date) TextCalendarMonth(w io.Writer) {
 		for j := 0; j < width-1; j++ {
 			fmt.Fprint(w, " ")
 		}
-		fmt.Fprint(w, weekday[:1])
+		fmt.Fprint(w, xstrings.FirstN(weekday, 1))
 	}
 	maximum := date.DaysInMonth()
 	year := date.Year()
