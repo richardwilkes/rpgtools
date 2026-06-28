@@ -99,16 +99,17 @@ func TestApplyExtraDiceFromModifiersAfter(t *testing.T) {
 //nolint:goconst // The tests are more readable without constants for duplicated string
 func TestStringRoundTrip(t *testing.T) {
 	c := check.New(t)
-	// String() must emit text that New() parses back into an equivalent Dice. The "+" separator before a positive
-	// modifier is required whenever a die term was already written, including the degenerate zero-sided case (e.g.
-	// "3d0+2" must not collapse to the ambiguous "3d02").
+	// String() must emit text that New() parses back into an equivalent Dice. A "+" separator precedes a positive
+	// modifier whenever a die term was written, so a real spec like "d6+2" is never emitted as the ambiguous "d62". A
+	// degenerate spec that rolls no dice (a zero count or zero sides) has no die term and collapses to just its
+	// modifier, so "3d0+2", "d0+2" and "0d6+2" all render as "2".
 	for i, one := range []struct {
 		Text     string
 		Expected string
 	}{
-		{"3d0+2", "3d0+2"},   // 0 - regression: previously emitted "3d02" -> reparsed as "3d2"
-		{"d0+2", "d0+2"},     // 1
-		{"3d0-2", "3d0-2"},   // 2
+		{"3d0+2", "2"},       // 0 - degenerate "no dice" specs collapse to just the modifier
+		{"d0+2", "2"},        // 1
+		{"3d0-2", "-2"},      // 2
 		{"d6+2", "d6+2"},     // 3
 		{"3d6+13", "3d6+13"}, // 4
 		{"2d4x2", "2d4x2"},   // 5
@@ -123,6 +124,41 @@ func TestStringRoundTrip(t *testing.T) {
 		c.Equal(one.Expected, s, desc)
 		c.True(d.IsEquivalent(dice.New(s)), "%s: %q did not round-trip", desc, s)
 	}
+}
+
+func TestNoDiceCanonicalizesToModifier(t *testing.T) {
+	c := check.New(t)
+	// A Dice that rolls no dice has no meaningful Count or Sides, whichever happens to be zero. Normalize collapses
+	// both to 0 so every such spec has one canonical form: it renders as just its modifier and compares equal to any
+	// other no-dice spec with the same modifier. The parser never produces a zero Count with non-zero Sides, but
+	// exported fields let any caller construct one, and "Nd0" specs reach here through New.
+	modifierTwo := &dice.Dice{Count: 0, Sides: 0, Modifier: 2, Multiplier: 1}
+	for _, d := range []*dice.Dice{
+		{Count: 0, Sides: 6, Modifier: 2, Multiplier: 1}, // zero count, non-zero sides
+		{Count: 3, Sides: 0, Modifier: 2, Multiplier: 1}, // non-zero count, zero sides
+		dice.New("0d6+2"),
+		dice.New("3d0+2"),
+	} {
+		c.Equal("2", d.String(), "%+v", *d)
+		c.True(d.IsEquivalent(dice.New("2")), "%+v did not round-trip to 2", *d)
+		c.True(d.IsEquivalent(modifierTwo), "%+v not equivalent to bare modifier", *d)
+		n := *d
+		n.Normalize()
+		c.Equal(0, n.Count, "%+v", *d)
+		c.Equal(0, n.Sides, "%+v", *d)
+		c.Equal(2, n.Modifier, "%+v", *d)
+	}
+
+	// With no modifier either, a no-dice spec is the canonical empty spec "0".
+	empty := &dice.Dice{Count: 0, Sides: 20, Modifier: 0, Multiplier: 1}
+	c.Equal("0", empty.String())
+	c.True(empty.IsEquivalent(dice.New("0")))
+
+	// A real spec (both Count and Sides non-zero) is left untouched.
+	withDice := dice.New("3d6+2")
+	c.Equal("3d6+2", withDice.String())
+	c.Equal(3, withDice.Count)
+	c.Equal(6, withDice.Sides)
 }
 
 func TestRollSingleSided(t *testing.T) {

@@ -360,12 +360,21 @@ func (dice *Dice) adjustedValues(applyExtraDiceFromModifiers bool) (count, sides
 }
 
 // clamped returns each field constrained to its permitted range without modifying the receiver. Because the fields are
-// exported, callers may set them to any value, so every use must clamp rather than assume a valid range.
+// exported, callers may set them to any value, so every use must clamp rather than assume a valid range. A Dice that
+// rolls no dice (a zero Count or a zero Sides) has no meaningful Count or Sides, so both are collapsed to 0. This gives
+// every "no dice" spec one canonical form: it renders as just its modifier and compares (and hashes) equal to any other
+// no-dice spec with the same modifier, so e.g. "0d6+2", "3d0+2" and "2" all behave identically rather than only some of
+// them collapsing depending on which field happened to be zero.
 func (dice *Dice) clamped() (count, sides, modifier, multiplier int) {
-	return min(max(dice.Count, 0), MaxValue),
-		min(max(dice.Sides, 0), MaxValue),
-		min(max(dice.Modifier, MinValue), MaxValue),
-		min(max(dice.Multiplier, 1), MaxValue)
+	count = min(max(dice.Count, 0), MaxValue)
+	sides = min(max(dice.Sides, 0), MaxValue)
+	modifier = min(max(dice.Modifier, MinValue), MaxValue)
+	multiplier = min(max(dice.Multiplier, 1), MaxValue)
+	if count == 0 || sides == 0 {
+		count = 0
+		sides = 0
+	}
+	return count, sides, modifier, multiplier
 }
 
 // Normalize the internal state, clamping each field to its permitted range.
