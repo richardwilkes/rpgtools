@@ -197,7 +197,7 @@ func (date Date) WriteFormat(w io.Writer, layout string) {
 			case 'D':
 				fmt.Fprint(w, date.DayInMonth())
 			case 'd':
-				fmt.Fprintf(w, "%0[1]*[2]d", widthNeeded(date.cal.Months[date.Month()].Days), date.DayInMonth())
+				fmt.Fprintf(w, "%0[1]*[2]d", widthNeeded(date.DaysInMonth()), date.DayInMonth())
 			case 'Y':
 				year := date.Year()
 				if date.cal.PreviousEra != "" {

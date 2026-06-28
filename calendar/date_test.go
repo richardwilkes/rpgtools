@@ -192,6 +192,19 @@ func TestFormat(t *testing.T) {
 	c.Equal("Friday, September 22, 1 BC", d.Format("%W, %M %D, %y"))
 }
 
+func TestFormatZeroPadded(t *testing.T) {
+	c := check.New(t)
+	cal := calendar.Gregorian()
+	calendar.Default = cal
+	c.Equal("01/01", cal.MustNewDate(1, 1, 2017).Format("%n/%d"))
+	c.Equal("09/22", cal.MustNewDate(9, 22, 2017).Format("%n/%d"))
+	c.Equal("02/29", cal.MustNewDate(2, 29, 2016).Format("%n/%d"))
+	// December is the last month; %d used to index past the end of the months
+	// slice and panic.
+	c.Equal("12/05", cal.MustNewDate(12, 5, 2017).Format("%n/%d"))
+	c.Equal("12/31", cal.MustNewDate(12, 31, 2017).Format("%n/%d"))
+}
+
 func TestParseDate(t *testing.T) {
 	c := check.New(t)
 	cal := calendar.Gregorian()
