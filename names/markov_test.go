@@ -28,6 +28,29 @@ func TestMarkovEmptyData(t *testing.T) {
 	c.Equal("", NewMarkovRunUnweightedNamer(blankUnweighted, false, false).GenerateName())
 }
 
+func TestMarkovLetterWeightedSelection(t *testing.T) {
+	c := check.New(t)
+	// Two equally-weighted single-letter inputs. Each letter is the final entry in
+	// the cumulative-weight table for one of the two transitions, so an off-by-one
+	// in the weighted selection would make one of them impossible to ever produce.
+	n := NewMarkovLetterNamer(1, map[string]int{"a": 1, "b": 1}, false, false)
+	counts := make(map[string]int)
+	for range 100 {
+		counts[n.GenerateName()]++
+	}
+	c.Equal(2, len(counts), "expected both letters to be produced, got: %v", counts)
+}
+
+func TestMarkovRunLengthWeighting(t *testing.T) {
+	c := check.New(t)
+	// The name-length distribution must honor each name's count, just as the
+	// transition table does. The cumulative length table therefore sums the counts
+	// rather than counting distinct names.
+	n := NewMarkovRunNamer(map[string]int{"oo": 3, "eee": 5}, false, false)
+	c.True(len(n.lengths) > 0)
+	c.Equal(8, n.lengths[len(n.lengths)-1][1])
+}
+
 func TestMarkovGeneratesFromData(t *testing.T) {
 	c := check.New(t)
 	// Sanity check that, given real data, the namers actually produce non-empty

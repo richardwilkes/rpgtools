@@ -86,7 +86,7 @@ func (n *MarkovRunNamer) add(name string, count int, mapping map[string]map[stri
 		last = next
 	}
 	n.final[last] = struct{}{}
-	lengths[len(name)]++
+	lengths[len(name)] += count
 }
 
 func (n *MarkovRunNamer) decompose(s string) []string {
@@ -181,7 +181,7 @@ func (n *MarkovRunNamer) GenerateNameWithRandomizer(rnd xrand.Randomizer) string
 }
 
 func (n *MarkovRunNamer) nextPart(m []stringLast, rnd xrand.Randomizer) string {
-	v := rnd.Intn(m[len(m)-1].last)
+	v := 1 + rnd.Intn(m[len(m)-1].last)
 	for i := range m {
 		if v <= m[i].last {
 			return m[i].s

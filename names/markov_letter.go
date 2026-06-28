@@ -172,7 +172,7 @@ func selectMax(lengths [][2]int, rnd xrand.Randomizer) int {
 	if len(lengths) == 0 {
 		return 0
 	}
-	maximum := rnd.Intn(lengths[len(lengths)-1][1])
+	maximum := 1 + rnd.Intn(lengths[len(lengths)-1][1])
 	for _, p := range lengths {
 		if p[1] >= maximum {
 			return p[0]
@@ -183,7 +183,7 @@ func selectMax(lengths [][2]int, rnd xrand.Randomizer) int {
 }
 
 func (n *MarkovLetterNamer) nextRune(m []runeLast, rnd xrand.Randomizer) rune {
-	v := rnd.Intn(m[len(m)-1].last)
+	v := 1 + rnd.Intn(m[len(m)-1].last)
 	for i := range m {
 		if v <= m[i].last {
 			return m[i].ch
