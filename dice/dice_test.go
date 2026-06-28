@@ -363,6 +363,21 @@ func TestExtractFirstPosition(t *testing.T) {
 		{"and 13 years later...", -1, -1},    // 7
 		{"and +13 years later...", -1, -1},   // 8
 		{"and -13 years later...", -1, -1},   // 9
+		// A 'd' with no digit after it is not dice notation; the trailing bare number that follows must not be
+		// reported as the spec, matching how bare numbers (cases 7-9) are ignored.
+		{"d 5", -1, -1},  // 10
+		{"d-5", -1, -1},  // 11
+		{"d+5", -1, -1},  // 12
+		{"d x2", -1, -1}, // 13
+		{"dx2", -1, -1},  // 14
+		// A genuine dice spec appearing after a discarded 'd' is still found.
+		{"d 5d6", 2, 5}, // 15
+		{"d 2d6", 2, 5}, // 16
+		{"ddd6", 2, 4},  // 17
+		// Lone trailing bare numbers (no discarded 'd') remain valid specs.
+		{"5", 0, 1},      // 18
+		{"13", 0, 2},     // 19
+		{"roll 5", 5, 6}, // 20
 	} {
 		desc := fmt.Sprintf("Table index %d: %s", i, one.Text)
 		start, end := dice.ExtractDicePosition(one.Text)

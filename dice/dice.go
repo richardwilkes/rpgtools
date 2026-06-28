@@ -126,6 +126,8 @@ func ExtractDicePosition(text string) (start, end int) {
 	start = -1
 	state := 0
 	foundDigit := false
+	hasD := false     // The current candidate contains a 'd'.
+	droppedD := false // A 'd' was discarded because no digit followed it.
 	maximum := len(text)
 	for i, ch := range text {
 		switch state {
@@ -140,12 +142,14 @@ func ExtractDicePosition(text string) (start, end int) {
 				if start == -1 {
 					start = i
 				}
+				hasD = true
 				state = 1
 			case ch == '+' || ch == '-':
 				state = 2
 			default:
 				foundDigit = false
 				start = -1
+				hasD = false
 			}
 		case 1: // Got 'd', but may not have found a digit yet; allow digits, sign or 'x'
 			switch {
@@ -153,6 +157,8 @@ func ExtractDicePosition(text string) (start, end int) {
 				foundDigit = true
 			case !foundDigit:
 				start = -1
+				hasD = false
+				droppedD = true
 				state = 0
 			case ch == '+' || ch == '-':
 				state = 2
@@ -179,7 +185,11 @@ func ExtractDicePosition(text string) (start, end int) {
 			break
 		}
 	}
-	if start != -1 {
+	// Once a 'd' has been discarded as non-dice notation, only a candidate that itself contains a 'd' is a real dice
+	// spec. Without this guard, the discarded 'd' would let an unrelated trailing bare number (such as the "5" in "d 5"
+	// or "d-5") be reported as the specification, which is inconsistent with bare numbers like "13 years" returning
+	// none.
+	if start != -1 && (hasD || !droppedD) {
 		for start < maximum && text[start] == ' ' {
 			start++
 		}
