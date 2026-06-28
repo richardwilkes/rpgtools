@@ -42,7 +42,7 @@ func LoadFromReader(r io.Reader) (map[string]int, error) {
 		count := int64(1)
 		if len(parts) > 1 {
 			var err error
-			if count, err = strconv.ParseInt(parts[1], 10, 64); err != nil || count < 1 {
+			if count, err = strconv.ParseInt(strings.TrimSpace(parts[1]), 10, 64); err != nil || count < 1 {
 				count = 1
 			}
 		}
