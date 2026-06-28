@@ -203,6 +203,21 @@ func (cal *Calendar) MinDaysPerYear() int {
 	return days
 }
 
+// mostDaysInMonth returns the largest number of days any single month can contain, including the extra day the leap
+// month gains in a leap year. It is used to size day-of-month fields to a consistent width regardless of which month or
+// year is being formatted.
+func (cal *Calendar) mostDaysInMonth() int {
+	most := 0
+	for i, month := range cal.Months {
+		days := month.Days
+		if cal.IsLeapMonth(i + 1) {
+			days++
+		}
+		most = max(most, days)
+	}
+	return most
+}
+
 // Days returns the number of days contained in a specific year.
 func (cal *Calendar) Days(year int) int {
 	days := cal.MinDaysPerYear()

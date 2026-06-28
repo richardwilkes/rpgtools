@@ -209,7 +209,7 @@ func (date Date) WriteFormat(w io.Writer, layout string) {
 			case 'D':
 				fmt.Fprint(w, date.DayInMonth())
 			case 'd':
-				fmt.Fprintf(w, "%0[1]*[2]d", widthNeeded(date.DaysInMonth()), date.DayInMonth())
+				fmt.Fprintf(w, "%0[1]*[2]d", widthNeeded(cal.mostDaysInMonth()), date.DayInMonth())
 			case 'Y':
 				year := date.Year()
 				if cal.PreviousEra != "" {
@@ -260,15 +260,9 @@ func widthNeeded(count int) int {
 // TextCalendarMonth writes a text representation of the month.
 func (date Date) TextCalendarMonth(w io.Writer) {
 	cal := date.calendar()
-	mostDays := 0
-	for _, m := range cal.Months {
-		if mostDays < m.Days {
-			mostDays = m.Days
-		}
-	}
 	fmt.Fprintf(w, "%d: %s", date.Month(), date.MonthName())
 	lastDayOfWeek := len(cal.WeekDays) - 1
-	width := len(fmt.Sprintf("%d", mostDays))
+	width := widthNeeded(cal.mostDaysInMonth())
 	for i, weekday := range cal.WeekDays {
 		if i == 0 {
 			fmt.Fprint(w, "\n")

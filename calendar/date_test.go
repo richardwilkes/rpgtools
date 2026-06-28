@@ -208,6 +208,36 @@ func TestFormatZeroPadded(t *testing.T) {
 	c.Equal("12/31", cal.MustNewDate(12, 31, 2017).Format("%n/%d"))
 }
 
+func TestFormatDayWidthConsistent(t *testing.T) {
+	c := check.New(t)
+
+	// A calendar whose months have very different lengths. The zero-padded day (%d) width must be consistent across
+	// every month, sized to the calendar's longest month rather than the month being formatted.
+	cal := &calendar.Calendar{
+		WeekDays:       []string{"A", "B", "C"},
+		DayZeroWeekDay: 0,
+		Months:         []calendar.Month{{Name: "Short", Days: 5}, {Name: "Long", Days: 40}},
+		Seasons:        []calendar.Season{{Name: "All", StartMonth: 1, StartDay: 1, EndMonth: 2, EndDay: 40}},
+	}
+	// Day 3 of the short month previously rendered as "3" (width 1) while the long month rendered "03" (width 2); both
+	// must now be "03".
+	c.Equal("03", cal.MustNewDate(1, 3, 1).Format("%d"))
+	c.Equal("03", cal.MustNewDate(2, 3, 1).Format("%d"))
+	c.Equal("40", cal.MustNewDate(2, 40, 1).Format("%d"))
+
+	// The leap month's extra day is accounted for, so the width is also consistent between leap and non-leap years.
+	leapCal := &calendar.Calendar{
+		WeekDays:       []string{"A", "B"},
+		DayZeroWeekDay: 0,
+		Months:         []calendar.Month{{Name: "M", Days: 9}},
+		Seasons:        []calendar.Season{{Name: "All", StartMonth: 1, StartDay: 1, EndMonth: 1, EndDay: 9}},
+		LeapYear:       &calendar.LeapYear{Month: 1, Every: 2},
+	}
+	c.Equal("03", leapCal.MustNewDate(1, 3, 1).Format("%d"))  // year 1: 9-day month
+	c.Equal("03", leapCal.MustNewDate(1, 3, 2).Format("%d"))  // year 2 (leap): 10-day month
+	c.Equal("10", leapCal.MustNewDate(1, 10, 2).Format("%d")) // the leap day itself
+}
+
 func TestTextMultiByteWeekDayNames(t *testing.T) {
 	c := check.New(t)
 	cal := calendar.Gregorian()
