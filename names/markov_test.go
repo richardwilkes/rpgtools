@@ -11,6 +11,7 @@ package names
 
 import (
 	"testing"
+	"unicode/utf8"
 
 	"github.com/richardwilkes/toolbox/v2/check"
 )
@@ -58,5 +59,36 @@ func TestMarkovGeneratesFromData(t *testing.T) {
 	for range 25 {
 		c.True(NewMarkovLetterNamer(2, data, false, false).GenerateName() != "")
 		c.True(NewMarkovRunNamer(data, false, false).GenerateName() != "")
+	}
+}
+
+func TestMarkovLengthCountsRunes(t *testing.T) {
+	c := check.New(t)
+	// "ααααα" is 5 runes but 10 bytes. The chains are built rune-by-rune, so the recorded name length must be the
+	// character (rune) count, not the UTF-8 byte count, otherwise non-ASCII names skew the length distribution.
+	const name = "ααααα"
+	c.Equal(5, utf8.RuneCountInString(name))
+	c.Equal(10, len(name))
+
+	letter := NewMarkovLetterNamer(1, map[string]int{name: 1}, false, false)
+	c.Equal(1, len(letter.lengths))
+	c.Equal(5, letter.lengths[0][0], "letter namer length must be counted in runes, not bytes")
+
+	run := NewMarkovRunNamer(map[string]int{name: 1}, false, false)
+	c.Equal(1, len(run.lengths))
+	c.Equal(5, run.lengths[0][0], "run namer length must be counted in runes, not bytes")
+}
+
+func TestMarkovLetterGenerationCapsInRunes(t *testing.T) {
+	c := check.New(t)
+	// Both training names are 4 characters long, so every generated name should also be 4 characters. Their byte
+	// lengths differ (4 vs 12), so a byte-based length distribution would target byte counts and emit names ranging
+	// anywhere from 2 to 12 characters depending on which runes were chosen. Each name uses a self-cycling letter so
+	// the chain never dead-ends and the length cap is what stops it.
+	n := NewMarkovLetterNamer(1, map[string]int{"aaaa": 1, "好好好好": 1}, false, false)
+	for range 200 {
+		name := n.GenerateName()
+		c.Equal(4, utf8.RuneCountInString(name), "generated %q has %d runes, want 4", name,
+			utf8.RuneCountInString(name))
 	}
 }

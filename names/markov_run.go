@@ -11,6 +11,7 @@ package names
 
 import (
 	"strings"
+	"unicode/utf8"
 
 	"github.com/richardwilkes/toolbox/v2/xrand"
 	"github.com/richardwilkes/toolbox/v2/xstrings"
@@ -86,7 +87,7 @@ func (n *MarkovRunNamer) add(name string, count int, mapping map[string]map[stri
 		last = next
 	}
 	n.final[last] = struct{}{}
-	lengths[len(name)] += count
+	lengths[utf8.RuneCountInString(name)] += count
 }
 
 func (n *MarkovRunNamer) decompose(s string) []string {
@@ -153,6 +154,7 @@ func (n *MarkovRunNamer) GenerateNameWithRandomizer(rnd xrand.Randomizer) string
 	var buffer strings.Builder
 	maximum := selectMax(n.lengths, rnd)
 	last := ""
+	count := 0
 	for {
 		m, ok := n.mapping[last]
 		if !ok {
@@ -164,7 +166,8 @@ func (n *MarkovRunNamer) GenerateNameWithRandomizer(rnd xrand.Randomizer) string
 		}
 		last = next
 		buffer.WriteString(next)
-		if buffer.Len() >= maximum {
+		count += utf8.RuneCountInString(next)
+		if count >= maximum {
 			if _, final := n.final[next]; final {
 				break
 			}
