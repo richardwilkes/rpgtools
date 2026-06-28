@@ -169,6 +169,9 @@ func computeLengths(lengths map[int]int) [][2]int {
 }
 
 func selectMax(lengths [][2]int, rnd xrand.Randomizer) int {
+	if len(lengths) == 0 {
+		return 0
+	}
 	maximum := rnd.Intn(lengths[len(lengths)-1][1])
 	for _, p := range lengths {
 		if p[1] >= maximum {
