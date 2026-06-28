@@ -446,6 +446,23 @@ func TestInvalidCalendarRejected(t *testing.T) {
 	c.HasError(err)
 	c.Panics(func() { noWeekDays.NewDateByDays(10) })
 
+	// A non-nil but invalid leap year rule (here an Every of 0) divides by zero in the leap year math the first time a
+	// year is resolved. checkUsable must reject it at construction rather than handing back a Date that panics on its
+	// first access. Previously NewDate(1, 1, 1) panicked here and NewDateByDays(5000) returned a Date whose Year() then
+	// panicked with an integer divide-by-zero.
+	badLeapYear := &calendar.Calendar{
+		WeekDays: []string{"A"},
+		Months:   []calendar.Month{{Name: "M", Days: 30}},
+		LeapYear: &calendar.LeapYear{Month: 1, Every: 0},
+	}
+	c.HasError(badLeapYear.Valid())
+	_, err = badLeapYear.NewDate(1, 1, 1)
+	c.HasError(err)
+	_, err = badLeapYear.ParseDate("1/1/1")
+	c.HasError(err)
+	c.Panics(func() { badLeapYear.MustNewDate(1, 1, 1) })
+	c.Panics(func() { badLeapYear.NewDateByDays(5000) })
+
 	// A structurally complete calendar with only a cosmetic flaw (an empty week day name) is rejected
 	// by the strict Valid, but must remain usable for date math.
 	cosmetic := calendar.Gregorian()

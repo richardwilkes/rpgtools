@@ -78,16 +78,22 @@ func (cal *Calendar) Valid() error {
 }
 
 // checkUsable returns an error if the calendar lacks the minimum structure required for date math: at least one week
-// day and at least one month with at least one day. This is a deliberately narrow subset of Valid that ignores cosmetic
-// concerns (such as empty week day names or missing seasons) so that dates cannot be created against a calendar whose
-// accessors would later panic with a divide-by-zero, while still accepting the calendars the rest of the package is
-// expected to tolerate.
+// day, at least one month with at least one day, and a valid leap year rule when one is present. This is a deliberately
+// narrow subset of Valid that ignores cosmetic concerns (such as empty week day names or missing seasons) so that dates
+// cannot be created against a calendar whose accessors would later panic (for example, with an integer divide-by-zero
+// in the leap year math when Every is 0), while still accepting the calendars the rest of the package is expected to
+// tolerate.
 func (cal *Calendar) checkUsable() error {
 	if len(cal.WeekDays) == 0 {
 		return errs.New("Calendar must have at least one week day")
 	}
 	if cal.MinDaysPerYear() < 1 {
 		return errs.New("Calendar must have at least one month with at least one day")
+	}
+	if cal.LeapYear != nil {
+		if err := cal.LeapYear.Valid(cal); err != nil {
+			return err
+		}
 	}
 	return nil
 }
