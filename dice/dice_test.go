@@ -145,6 +145,27 @@ func TestRollSingleSided(t *testing.T) {
 	}
 }
 
+func TestIsEquivalent(t *testing.T) {
+	c := check.New(t)
+
+	// Differences that normalize away (a sub-1 multiplier becomes 1) are still equivalent.
+	a := &dice.Dice{Count: 1, Sides: 6, Modifier: 2, Multiplier: 1}
+	b := &dice.Dice{Count: 1, Sides: 6, Modifier: 2, Multiplier: 0}
+	c.True(a.IsEquivalent(b))
+
+	// Genuinely different dice are not equivalent.
+	c.False(a.IsEquivalent(&dice.Dice{Count: 2, Sides: 6, Modifier: 2, Multiplier: 1}))
+
+	// Regression: comparing must not mutate either operand, even when their fields need normalizing.
+	left := &dice.Dice{Count: -3, Sides: 6, Modifier: 0, Multiplier: 1}
+	right := &dice.Dice{Count: 5, Sides: 0, Modifier: 0, Multiplier: 0}
+	leftCopy := *left
+	rightCopy := *right
+	left.IsEquivalent(right)
+	c.Equal(leftCopy, *left, "receiver was mutated by IsEquivalent")
+	c.Equal(rightCopy, *right, "argument was mutated by IsEquivalent")
+}
+
 func TestPoolProbability(t *testing.T) {
 	c := check.New(t)
 	d := &dice.Dice{Count: 3, Sides: 6}

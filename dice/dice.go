@@ -333,11 +333,14 @@ func (dice *Dice) UnmarshalText(text []byte) error {
 	return nil
 }
 
-// IsEquivalent returns true if this Dice is equivalent to another Dice. Normalizes both Dice.
+// IsEquivalent returns true if this Dice is equivalent to another Dice. Both are compared as if normalized, without
+// modifying either Dice.
 func (dice *Dice) IsEquivalent(other *Dice) bool {
-	dice.Normalize()
-	other.Normalize()
-	return dice.Count == other.Count && dice.Sides == other.Sides && dice.Modifier == other.Modifier && dice.Multiplier == other.Multiplier
+	left := *dice
+	right := *other
+	left.Normalize()
+	right.Normalize()
+	return left == right
 }
 
 // PoolProbability return the probability that at least one die will be equal to or greater than the target value.
