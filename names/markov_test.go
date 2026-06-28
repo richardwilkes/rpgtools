@@ -79,6 +79,38 @@ func TestMarkovLengthCountsRunes(t *testing.T) {
 	c.Equal(5, run.lengths[0][0], "run namer length must be counted in runes, not bytes")
 }
 
+func TestMarkovGenerationHasHardCap(t *testing.T) {
+	c := check.New(t)
+	// Hand-built models whose transition graph is an endless cycle (a->b->a / "a"->"b"->"a") with an empty final
+	// set. The generation loop only stops on a dead-end key, an empty token, or a final token past 'maximum', so
+	// without a hard cap it would spin forever. The cap bounds the result at twice the longest training length
+	// (2*4 = 8 here).
+	letter := &MarkovLetterNamer{
+		depth: 1,
+		mapping: map[string][]runeLast{
+			"\x00": {{ch: 'a', last: 1}},
+			"a":    {{ch: 'b', last: 1}},
+			"b":    {{ch: 'a', last: 1}},
+		},
+		final:     map[rune]struct{}{},
+		lengths:   [][2]int{{4, 1}},
+		maxLength: 4,
+	}
+	c.Equal(8, utf8.RuneCountInString(letter.GenerateName()), "letter namer must stop at the hard cap")
+
+	run := &MarkovRunNamer{
+		mapping: map[string][]stringLast{
+			"":  {{s: "a", last: 1}},
+			"a": {{s: "b", last: 1}},
+			"b": {{s: "a", last: 1}},
+		},
+		final:     map[string]struct{}{},
+		lengths:   [][2]int{{4, 1}},
+		maxLength: 4,
+	}
+	c.Equal(8, utf8.RuneCountInString(run.GenerateName()), "run namer must stop at the hard cap")
+}
+
 func TestMarkovLetterGenerationCapsInRunes(t *testing.T) {
 	c := check.New(t)
 	// Both training names are 4 characters long, so every generated name should also be 4 characters. Their byte

@@ -31,6 +31,7 @@ type MarkovLetterNamer struct {
 	final        map[rune]struct{}
 	lengths      [][2]int
 	depth        int
+	maxLength    int
 	lowered      bool
 	firstToUpper bool
 }
@@ -106,7 +107,7 @@ func (n *MarkovLetterNamer) add(name string, count int, mapping map[string]map[r
 }
 
 func (n *MarkovLetterNamer) finish(mapping map[string]map[rune]int, lengths map[int]int) {
-	n.lengths = computeLengths(lengths)
+	n.lengths, n.maxLength = computeLengths(lengths)
 	n.mapping = make(map[string][]runeLast)
 	for k, v := range mapping {
 		total := 0
@@ -128,6 +129,10 @@ func (n *MarkovLetterNamer) GenerateName() string {
 func (n *MarkovLetterNamer) GenerateNameWithRandomizer(rnd xrand.Randomizer) string {
 	var buffer strings.Builder
 	maximum := selectMax(n.lengths, rnd)
+	// Past 'maximum' the loop keeps going only to end on a natural (final) letter. Training data whose transition graph
+	// cycles without a reachable final letter would otherwise loop forever, so cap the length at twice the longest
+	// training name as a safety valve; legitimate data never reaches it.
+	hardCap := 2 * n.maxLength
 	ch := make([]rune, n.depth)
 	count := 0
 	for {
@@ -150,6 +155,9 @@ func (n *MarkovLetterNamer) GenerateNameWithRandomizer(rnd xrand.Randomizer) str
 				break
 			}
 		}
+		if count >= hardCap {
+			break
+		}
 	}
 	result := buffer.String()
 	if n.lowered {
@@ -161,14 +169,15 @@ func (n *MarkovLetterNamer) GenerateNameWithRandomizer(rnd xrand.Randomizer) str
 	return result
 }
 
-func computeLengths(lengths map[int]int) [][2]int {
-	result := make([][2]int, 0, len(lengths))
+func computeLengths(lengths map[int]int) (result [][2]int, maxLength int) {
+	result = make([][2]int, 0, len(lengths))
 	total := 0
 	for length, count := range lengths {
 		total += count
 		result = append(result, [2]int{length, total})
+		maxLength = max(maxLength, length)
 	}
-	return result
+	return result, maxLength
 }
 
 func selectMax(lengths [][2]int, rnd xrand.Randomizer) int {

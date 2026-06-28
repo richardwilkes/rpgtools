@@ -28,6 +28,7 @@ type MarkovRunNamer struct {
 	mapping      map[string][]stringLast
 	final        map[string]struct{}
 	lengths      [][2]int
+	maxLength    int
 	lowered      bool
 	firstToUpper bool
 }
@@ -131,7 +132,7 @@ func (n *MarkovRunNamer) decompose(s string) []string {
 }
 
 func (n *MarkovRunNamer) finish(mapping map[string]map[string]int, lengths map[int]int) {
-	n.lengths = computeLengths(lengths)
+	n.lengths, n.maxLength = computeLengths(lengths)
 	n.mapping = make(map[string][]stringLast)
 	for k, v := range mapping {
 		total := 0
@@ -153,6 +154,10 @@ func (n *MarkovRunNamer) GenerateName() string {
 func (n *MarkovRunNamer) GenerateNameWithRandomizer(rnd xrand.Randomizer) string {
 	var buffer strings.Builder
 	maximum := selectMax(n.lengths, rnd)
+	// Past 'maximum' the loop keeps going only to end on a natural (final) run. Training data whose transition graph
+	// cycles without a reachable final run would otherwise loop forever, so cap the length at twice the longest
+	// training name as a safety valve; legitimate data never reaches it.
+	hardCap := 2 * n.maxLength
 	last := ""
 	count := 0
 	for {
@@ -171,6 +176,9 @@ func (n *MarkovRunNamer) GenerateNameWithRandomizer(rnd xrand.Randomizer) string
 			if _, final := n.final[next]; final {
 				break
 			}
+		}
+		if count >= hardCap {
+			break
 		}
 	}
 	result := buffer.String()
