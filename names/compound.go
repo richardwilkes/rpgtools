@@ -13,7 +13,6 @@ import (
 	"strings"
 
 	"github.com/richardwilkes/toolbox/v2/xrand"
-	"github.com/richardwilkes/toolbox/v2/xstrings"
 )
 
 var _ Namer = &CompoundNamer{}
@@ -59,12 +58,5 @@ func (n *CompoundNamer) GenerateNameWithRandomizer(rnd xrand.Randomizer) string 
 		}
 		buffer.WriteString(namer.GenerateNameWithRandomizer(rnd))
 	}
-	result := buffer.String()
-	if n.lowered {
-		result = strings.ToLower(result)
-	}
-	if n.firstToUpper {
-		result = xstrings.FirstToUpper(result)
-	}
-	return result
+	return applyCase(buffer.String(), n.lowered, n.firstToUpper)
 }

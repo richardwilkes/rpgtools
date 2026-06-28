@@ -10,11 +10,12 @@
 package names
 
 import (
+	"iter"
+	"maps"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/richardwilkes/toolbox/v2/xrand"
-	"github.com/richardwilkes/toolbox/v2/xstrings"
 )
 
 var _ Namer = &MarkovLetterNamer{}
@@ -41,6 +42,17 @@ type MarkovLetterNamer struct {
 // set. Any count less than 1 effectively removes the name from the set. If 'lowered' is true, then the result will be
 // forced to lowercase. If 'firstToUpper' is true, then the result will have its first letter capitalized.
 func NewMarkovLetterNamer(depth int, data map[string]int, lowered, firstToUpper bool) *MarkovLetterNamer {
+	return newMarkovLetterNamer(depth, maps.All(data), lowered, firstToUpper)
+}
+
+// NewMarkovLetterUnweightedNamer creates a new MarkovLetterNamer. The depth is the number of letters to consider within
+// a run at a time. The data should be a set of names to train the model with. If 'lowered' is true, then the result
+// will be forced to lowercase. If 'firstToUpper' is true, then the result will have its first letter capitalized.
+func NewMarkovLetterUnweightedNamer(depth int, data []string, lowered, firstToUpper bool) *MarkovLetterNamer {
+	return newMarkovLetterNamer(depth, unweighted(data), lowered, firstToUpper)
+}
+
+func newMarkovLetterNamer(depth int, data iter.Seq2[string, int], lowered, firstToUpper bool) *MarkovLetterNamer {
 	if depth < 1 {
 		depth = 1
 	}
@@ -57,30 +69,6 @@ func NewMarkovLetterNamer(depth int, data map[string]int, lowered, firstToUpper 
 			if name = strings.TrimSpace(name); name != "" {
 				n.add(name, count, mapping, lengths)
 			}
-		}
-	}
-	n.finish(mapping, lengths)
-	return n
-}
-
-// NewMarkovLetterUnweightedNamer creates a new MarkovLetterNamer. The depth is the number of letters to consider within
-// a run at a time. The data should be a set of names to train the model with. If 'lowered' is true, then the result
-// will be forced to lowercase. If 'firstToUpper' is true, then the result will have its first letter capitalized.
-func NewMarkovLetterUnweightedNamer(depth int, data []string, lowered, firstToUpper bool) *MarkovLetterNamer {
-	if depth < 1 {
-		depth = 1
-	}
-	n := &MarkovLetterNamer{
-		depth:        depth,
-		final:        make(map[rune]struct{}),
-		lowered:      lowered,
-		firstToUpper: firstToUpper,
-	}
-	mapping := make(map[string]map[rune]int)
-	lengths := make(map[int]int)
-	for _, name := range data {
-		if name = strings.TrimSpace(name); name != "" {
-			n.add(name, 1, mapping, lengths)
 		}
 	}
 	n.finish(mapping, lengths)
@@ -108,16 +96,9 @@ func (n *MarkovLetterNamer) add(name string, count int, mapping map[string]map[r
 
 func (n *MarkovLetterNamer) finish(mapping map[string]map[rune]int, lengths map[int]int) {
 	n.lengths, n.maxLength = computeLengths(lengths)
-	n.mapping = make(map[string][]runeLast)
-	for k, v := range mapping {
-		total := 0
-		pairs := make([]runeLast, 0, len(v))
-		for ch, count := range v {
-			total += count
-			pairs = append(pairs, runeLast{ch: ch, last: total})
-		}
-		n.mapping[k] = pairs
-	}
+	n.mapping = cumulativePairs(mapping, func(ch rune, cumulative int) runeLast {
+		return runeLast{ch: ch, last: cumulative}
+	})
 }
 
 // GenerateName generates a new random name.
@@ -159,14 +140,7 @@ func (n *MarkovLetterNamer) GenerateNameWithRandomizer(rnd xrand.Randomizer) str
 			break
 		}
 	}
-	result := buffer.String()
-	if n.lowered {
-		result = strings.ToLower(result)
-	}
-	if n.firstToUpper {
-		result = xstrings.FirstToUpper(result)
-	}
-	return result
+	return applyCase(buffer.String(), n.lowered, n.firstToUpper)
 }
 
 func computeLengths(lengths map[int]int) (result [][2]int, maxLength int) {
@@ -181,26 +155,15 @@ func computeLengths(lengths map[int]int) (result [][2]int, maxLength int) {
 }
 
 func selectMax(lengths [][2]int, rnd xrand.Randomizer) int {
-	if len(lengths) == 0 {
-		return 0
+	if p, ok := pickWeighted(lengths, rnd, func(p [2]int) int { return p[1] }); ok {
+		return p[0]
 	}
-	maximum := 1 + rnd.Intn(lengths[len(lengths)-1][1])
-	for _, p := range lengths {
-		if p[1] >= maximum {
-			return p[0]
-		}
-	}
-	// Should not be reachable
-	return 5
+	return 0
 }
 
 func (n *MarkovLetterNamer) nextRune(m []runeLast, rnd xrand.Randomizer) rune {
-	v := 1 + rnd.Intn(m[len(m)-1].last)
-	for i := range m {
-		if v <= m[i].last {
-			return m[i].ch
-		}
+	if e, ok := pickWeighted(m, rnd, func(e runeLast) int { return e.last }); ok {
+		return e.ch
 	}
-	// Should not be reachable
 	return 0
 }

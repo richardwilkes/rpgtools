@@ -10,6 +10,8 @@
 package names
 
 import (
+	"iter"
+	"maps"
 	"slices"
 	"strings"
 
@@ -37,8 +39,18 @@ type SimpleNamer struct {
 // is true, then the result will be forced to lowercase. If 'firstToUpper' is true, then the result will have its first
 // letter capitalized.
 func NewSimpleNamer(data map[string]int, lowered, firstToUpper bool) *SimpleNamer {
+	return newSimpleNamer(maps.All(data), lowered, firstToUpper)
+}
+
+// NewSimpleUnweightedNamer creates a new SimpleNamer. The data should be a set of names to choose from. If 'lowered' is
+// true, then the result will be forced to lowercase. If 'firstToUpper' is true, then the result will have its first
+// letter capitalized.
+func NewSimpleUnweightedNamer(data []string, lowered, firstToUpper bool) *SimpleNamer {
+	return newSimpleNamer(unweighted(data), lowered, firstToUpper)
+}
+
+func newSimpleNamer(data iter.Seq2[string, int], lowered, firstToUpper bool) *SimpleNamer {
 	n := SimpleNamer{
-		data:         make([]nameCount, 0, len(data)),
 		lowered:      lowered,
 		firstToUpper: firstToUpper,
 	}
@@ -48,25 +60,6 @@ func NewSimpleNamer(data map[string]int, lowered, firstToUpper bool) *SimpleName
 				n.data = append(n.data, nameCount{name: name, count: count})
 				n.total += count
 			}
-		}
-	}
-	slices.SortFunc(n.data, func(a, b nameCount) int { return xstrings.NaturalCmp(a.name, b.name, false) })
-	return &n
-}
-
-// NewSimpleUnweightedNamer creates a new SimpleNamer. The data should be a set of names to choose from. If 'lowered' is
-// true, then the result will be forced to lowercase. If 'firstToUpper' is true, then the result will have its first
-// letter capitalized.
-func NewSimpleUnweightedNamer(data []string, lowered, firstToUpper bool) *SimpleNamer {
-	n := SimpleNamer{
-		data:         make([]nameCount, 0, len(data)),
-		lowered:      lowered,
-		firstToUpper: firstToUpper,
-	}
-	for _, name := range data {
-		if name = strings.TrimSpace(name); name != "" {
-			n.data = append(n.data, nameCount{name: name, count: 1})
-			n.total++
 		}
 	}
 	slices.SortFunc(n.data, func(a, b nameCount) int { return xstrings.NaturalCmp(a.name, b.name, false) })
@@ -86,19 +79,9 @@ func (n *SimpleNamer) GenerateNameWithRandomizer(rnd xrand.Randomizer) string {
 	v := 1 + rnd.Intn(n.total)
 	for i := range n.data {
 		if v -= n.data[i].count; v < 1 {
-			return n.finish(n.data[i].name)
+			return applyCase(n.data[i].name, n.lowered, n.firstToUpper)
 		}
 	}
 	// Should not be reachable
-	return n.finish(n.data[0].name)
-}
-
-func (n *SimpleNamer) finish(in string) string {
-	if n.lowered {
-		in = strings.ToLower(in)
-	}
-	if n.firstToUpper {
-		in = xstrings.FirstToUpper(in)
-	}
-	return in
+	return applyCase(n.data[0].name, n.lowered, n.firstToUpper)
 }
