@@ -17,6 +17,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/richardwilkes/toolbox/v2/xrand"
 )
@@ -127,8 +128,10 @@ func ExtractDicePosition(text string) (start, end int) {
 	state := 0
 	foundDigit := false
 	hasD := false     // The current candidate contains a 'd'.
-	droppedD := false // A 'd' was discarded because no digit followed it.
+	droppedD := false // A standalone (non-word) 'd' was discarded because no digit followed it.
+	dInWord := false  // The 'd' starting the current candidate is adjacent to a prose letter, so it is part of a word.
 	maximum := len(text)
+	var prev rune
 	for i, ch := range text {
 		switch state {
 		case 0: // Look for a leading number (with or without a sign) or a 'd'
@@ -143,6 +146,7 @@ func ExtractDicePosition(text string) (start, end int) {
 					start = i
 				}
 				hasD = true
+				dInWord = isProseLetter(prev)
 				state = 1
 			case ch == '+' || ch == '-':
 				state = 2
@@ -156,9 +160,14 @@ func ExtractDicePosition(text string) (start, end int) {
 			case ch >= '0' && ch <= '9':
 				foundDigit = true
 			case !foundDigit:
+				// Discard the 'd': no digit followed it, so it is not a die marker. Only remember the discard when the
+				// 'd' was standalone; a 'd' that is part of a word (adjacent to a prose letter before or after it, as
+				// in "read 5" or "drum 5") must not suppress an unrelated bare number later in the text.
+				if !dInWord && !isProseLetter(ch) {
+					droppedD = true
+				}
 				start = -1
 				hasD = false
-				droppedD = true
 				state = 0
 			case ch == '+' || ch == '-':
 				state = 2
@@ -184,11 +193,13 @@ func ExtractDicePosition(text string) (start, end int) {
 			maximum = i
 			break
 		}
+		prev = ch
 	}
-	// Once a 'd' has been discarded as non-dice notation, only a candidate that itself contains a 'd' is a real dice
-	// spec. Without this guard, the discarded 'd' would let an unrelated trailing bare number (such as the "5" in "d 5"
-	// or "d-5") be reported as the specification, which is inconsistent with bare numbers like "13 years" returning
-	// none.
+	// Once a standalone 'd' has been discarded as non-dice notation, only a candidate that itself contains a 'd' is a
+	// real dice spec. Without this guard, the discarded 'd' would let an unrelated trailing bare number (such as the
+	// "5" in "d 5" or "d-5") be reported as the specification, which is inconsistent with bare numbers like "13 years"
+	// returning none. A 'd' embedded in a word (as in "read 5") is not treated as discarded, so it leaves a trailing
+	// bare number reportable just like prose without any 'd'.
 	if start != -1 && (hasD || !droppedD) {
 		for start < maximum && text[start] == ' ' {
 			start++
@@ -201,6 +212,13 @@ func ExtractDicePosition(text string) (start, end int) {
 		}
 	}
 	return -1, -1
+}
+
+// isProseLetter reports whether r is an alphabetic letter that is not significant to dice notation (the 'd' die marker
+// or the 'x' multiplier). A 'd' adjacent to such a letter belongs to an ordinary word rather than a dice specification,
+// so ExtractDicePosition must not treat it as a discarded die marker.
+func isProseLetter(r rune) bool {
+	return unicode.IsLetter(r) && r != 'd' && r != 'D' && r != 'x' && r != 'X'
 }
 
 // Minimum returns the minimum result. 'extraDiceFromModifiers' determines if modifiers greater than or equal to the

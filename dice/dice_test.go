@@ -378,6 +378,15 @@ func TestExtractFirstPosition(t *testing.T) {
 		{"5", 0, 1},      // 18
 		{"13", 0, 2},     // 19
 		{"roll 5", 5, 6}, // 20
+		// A 'd' that is part of an ordinary word is not a discarded die marker, so it must not suppress a trailing
+		// bare number the way a standalone 'd' (cases 10-14) does. The number stays reportable, exactly as it is
+		// after a 'd'-free word like "roll" (case 20) or "the".
+		{"read 5", 5, 6}, // 21 - 'd' at the end of a word
+		{"old 5", 4, 5},  // 22 - 'd' at the end of a word
+		{"add 5", 4, 5},  // 23 - 'd' at the end of a word
+		{"hold 5", 5, 6}, // 24 - 'd' at the end of a word
+		{"drum 5", 5, 6}, // 25 - 'd' at the start of a word (followed by a prose letter)
+		{"the 5", 4, 5},  // 26 - control: a word without any 'd' already worked
 	} {
 		desc := fmt.Sprintf("Table index %d: %s", i, one.Text)
 		start, end := dice.ExtractDicePosition(one.Text)
