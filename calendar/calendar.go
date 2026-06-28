@@ -211,14 +211,22 @@ func (cal *Calendar) parseDate(month int, dayText, yearText, eraText string) (Da
 	if err != nil {
 		return Date{cal: cal}, errs.NewWithCausef(err, "invalid day text '%s'", dayText)
 	}
-	if cal.PreviousEra != "" && cal.PreviousEra != cal.Era && strings.EqualFold(cal.PreviousEra, eraText) {
-		// A leading minus sign and the previous-era suffix both place the year before the current era, so
-		// accepting both would double-negate the year back into the current era. Reject the contradiction rather
-		// than silently pick one interpretation.
-		if year < 0 {
-			return Date{cal: cal}, errs.Newf("year '%s' and previous-era suffix '%s' both indicate the previous era",
-				yearText, eraText)
-		}
+	// A leading minus sign already places the year before the current era, so a recognized era suffix must agree with
+	// it. When the calendar names its two eras distinctly, a previous-era suffix on a non-negative year selects the
+	// previous era, but on a negative year it merely repeats the sign, and a current-era suffix on a negative year
+	// flatly contradicts it; reject both rather than silently choosing an interpretation. An empty or unrecognized
+	// suffix is left alone so ParseDate can still find dates embedded in surrounding prose.
+	distinctEras := cal.Era != cal.PreviousEra
+	previousEraSuffix := eraText != "" && distinctEras && strings.EqualFold(cal.PreviousEra, eraText)
+	currentEraSuffix := eraText != "" && distinctEras && strings.EqualFold(cal.Era, eraText)
+	switch {
+	case year < 0 && previousEraSuffix:
+		return Date{cal: cal}, errs.Newf("year '%s' and previous-era suffix '%s' both indicate the previous era",
+			yearText, eraText)
+	case year < 0 && currentEraSuffix:
+		return Date{cal: cal}, errs.Newf("negative year '%s' contradicts the current-era suffix '%s'",
+			yearText, eraText)
+	case previousEraSuffix:
 		year = -year
 	}
 	return cal.NewDate(month, day, year)

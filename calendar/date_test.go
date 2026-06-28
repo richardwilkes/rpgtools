@@ -321,6 +321,33 @@ func TestParseDate(t *testing.T) {
 	c.HasError(err)
 	_, err = cal.ParseDate("September 22, -2017 BC")
 	c.HasError(err)
+
+	// A negative year combined with the current-era suffix is contradictory in the same way: the minus sign places
+	// the year in the previous era while the suffix names the current era. Reject it, symmetrically with the
+	// previous-era case above. A non-negative year with the current-era suffix remains valid.
+	_, err = cal.ParseDate("9/22/-5 AD")
+	c.HasError(err)
+	_, err = cal.ParseDate("September 22, -5 AD")
+	c.HasError(err)
+	date, err = cal.ParseDate("9/22/2017 AD")
+	c.NoError(err)
+	c.Equal(cal.MustNewDate(9, 22, 2017), date)
+}
+
+func TestParseDateSharedEraSuffix(t *testing.T) {
+	c := check.New(t)
+	// When a calendar uses the same name for both eras (as the Pathfinder calendars do), the suffix cannot
+	// disambiguate the year, so a negative year combined with that suffix is NOT a contradiction and must still
+	// parse, unlike the distinct-era cases rejected in TestParseDate.
+	cal := calendar.Gregorian()
+	cal.Era = "AR"
+	cal.PreviousEra = "AR"
+	date, err := cal.ParseDate("9/22/-5 AR")
+	c.NoError(err)
+	c.Equal(cal.MustNewDate(9, 22, -5), date)
+	date, err = cal.ParseDate("9/22/2017 AR")
+	c.NoError(err)
+	c.Equal(cal.MustNewDate(9, 22, 2017), date)
 }
 
 func TestParseDateAmbiguousMonthAbbreviation(t *testing.T) {
