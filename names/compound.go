@@ -30,8 +30,15 @@ type CompoundNamer struct {
 // 'namers'. If 'lowered' is true, then the result will be forced to lowercase. If 'firstToUpper' is true, then the
 // result will have its first letter capitalized.
 func NewCompoundNamer(separator string, lowered, firstToUpper bool, namers ...Namer) *CompoundNamer {
+	// Drop any nil namers so they don't trigger a nil pointer dereference when generating a name later on.
+	filtered := make([]Namer, 0, len(namers))
+	for _, namer := range namers {
+		if namer != nil {
+			filtered = append(filtered, namer)
+		}
+	}
 	return &CompoundNamer{
-		namers:       namers,
+		namers:       filtered,
 		separator:    separator,
 		lowered:      lowered,
 		firstToUpper: firstToUpper,
