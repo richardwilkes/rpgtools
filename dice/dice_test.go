@@ -147,6 +147,47 @@ func TestRollSingleSided(t *testing.T) {
 	}
 }
 
+// topFaceRandomizer always reports the highest face (n-1), making a roll deterministic: every die contributes its
+// maximum, so the total equals Maximum(). This both removes randomness from the assertion and proves the loop ran for
+// each clamped die.
+type topFaceRandomizer struct{}
+
+func (topFaceRandomizer) Intn(n int) int {
+	if n <= 0 {
+		return 0
+	}
+	return n - 1
+}
+
+func TestRollTerminatesOnHugeCount(t *testing.T) {
+	c := check.New(t)
+	// Regression: a roll iterates Count times, so Count must be clamped to dice.MaxValue before the loop runs;
+	// otherwise an enormous count is an effective hang. Cover both the parsed spec (extractValue caps the number) and a
+	// field set directly to math.MaxInt, which bypasses the parser's cap and relies solely on the clamp inside the
+	// roll. Run each roll in a goroutine so a regression times out rather than hanging the whole suite.
+	for i, d := range []*dice.Dice{
+		dice.New("99999999999999999999d6"),
+		{Count: math.MaxInt, Sides: 6, Multiplier: 1},
+	} {
+		desc := fmt.Sprintf("case %d", i)
+		minimum := d.Minimum(false)
+		maximum := d.Maximum(false)
+		done := make(chan [2]int, 1)
+		go func() {
+			// Roll() (the public entry point at line 230) uses crypto rand, so only its range can be checked.
+			// RollWithRandomizer pinned to the top face must equal Maximum(), proving every clamped die was rolled.
+			done <- [2]int{d.Roll(false), d.RollWithRandomizer(topFaceRandomizer{}, false)}
+		}()
+		select {
+		case got := <-done:
+			c.True(got[0] >= minimum && got[0] <= maximum, "%s: roll %d outside [%d,%d]", desc, got[0], minimum, maximum)
+			c.Equal(maximum, got[1], desc)
+		case <-time.After(5 * time.Second):
+			t.Fatalf("%s: roll did not terminate: the unbounded-count hang has regressed", desc)
+		}
+	}
+}
+
 func TestIsEquivalent(t *testing.T) {
 	c := check.New(t)
 
