@@ -17,6 +17,7 @@ import (
 	"github.com/richardwilkes/toolbox/v2/check"
 )
 
+//nolint:goconst // The tests are more readable without constants for duplicated string
 func TestCreation(t *testing.T) {
 	c := check.New(t)
 	for i, one := range []struct {
