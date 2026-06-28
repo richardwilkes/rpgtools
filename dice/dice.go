@@ -343,8 +343,12 @@ func (dice *Dice) IsEquivalent(other *Dice) bool {
 // PoolProbability return the probability that at least one die will be equal to or greater than the target value.
 func (dice *Dice) PoolProbability(target int) float64 {
 	dice.Normalize()
-	if dice.Count < 1 || dice.Sides < target {
+	if dice.Count < 1 || dice.Sides < 1 || dice.Sides < target {
 		return 0
+	}
+	if target < 1 {
+		// Every die rolls at least 1, so a non-positive target is always met.
+		return 1
 	}
 	return 1 - math.Pow(1-float64(1+dice.Sides-target)/float64(dice.Sides), float64(dice.Count))
 }

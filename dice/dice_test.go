@@ -11,6 +11,7 @@ package dice_test
 
 import (
 	"fmt"
+	"math"
 	"testing"
 
 	"github.com/richardwilkes/rpgtools/dice"
@@ -141,6 +142,42 @@ func TestRollSingleSided(t *testing.T) {
 		c.Equal(one.Expected, d.Roll(false), desc)
 		c.Equal(one.Expected, d.Minimum(false), desc)
 		c.Equal(one.Expected, d.Maximum(false), desc)
+	}
+}
+
+func TestPoolProbability(t *testing.T) {
+	c := check.New(t)
+	d := &dice.Dice{Count: 3, Sides: 6}
+
+	// Regression: a non-positive target is met by every roll, so the probability must be exactly 1,
+	// never greater than 1 as it was previously (e.g. 1.0046 for target 0).
+	for _, target := range []int{0, -1, -100} {
+		c.Equal(1.0, d.PoolProbability(target), "target %d", target)
+	}
+
+	// A target of 1 is met by every face.
+	c.Equal(1.0, d.PoolProbability(1))
+
+	// A target beyond the number of sides is impossible.
+	c.Equal(0.0, d.PoolProbability(7))
+
+	// No dice, or a zero-sided die (which cannot roll), yields 0 rather than a division by zero.
+	c.Equal(0.0, (&dice.Dice{Count: 0, Sides: 6}).PoolProbability(3))
+	c.Equal(0.0, (&dice.Dice{Count: 3, Sides: 0}).PoolProbability(3))
+	c.Equal(0.0, (&dice.Dice{Count: 3, Sides: 0}).PoolProbability(0))
+
+	// A representative interior value: 3d6 rolling at least one 6 is 1-(5/6)^3 = 91/216.
+	c.True(math.Abs(d.PoolProbability(6)-91.0/216.0) < 1e-12, "3d6 >=6 probability = %v, want ~%v",
+		d.PoolProbability(6), 91.0/216.0)
+
+	// Across the valid range the probability stays within [0,1] and strictly decreases as the target
+	// rises.
+	prev := 2.0
+	for target := 1; target <= 6; target++ {
+		p := d.PoolProbability(target)
+		c.True(p >= 0 && p <= 1, "target %d produced out-of-range probability %v", target, p)
+		c.True(p < prev, "probability did not decrease at target %d: %v >= %v", target, p, prev)
+		prev = p
 	}
 }
 
