@@ -204,7 +204,13 @@ func ExtractDicePosition(text string) (start, end int) {
 		for start < maximum && text[start] == ' ' {
 			start++
 		}
-		for maximum > start && text[maximum-1] == ' ' {
+		// Trim a trailing operator ('+', '-' or 'x'/'X') left without an operand, plus any surrounding spaces, so the
+		// span covers only the dice spec itself (e.g. "d6+" yields "d6" and "3d6x" yields "3d6"). Within the span such
+		// an operator is always dangling, since an operand digit would otherwise follow it.
+		for maximum > start {
+			if c := text[maximum-1]; c != ' ' && c != '+' && c != '-' && c != 'x' && c != 'X' {
+				break
+			}
 			maximum--
 		}
 		if start < maximum {

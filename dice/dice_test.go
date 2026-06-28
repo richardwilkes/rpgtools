@@ -387,6 +387,15 @@ func TestExtractFirstPosition(t *testing.T) {
 		{"hold 5", 5, 6}, // 24 - 'd' at the end of a word
 		{"drum 5", 5, 6}, // 25 - 'd' at the start of a word (followed by a prose letter)
 		{"the 5", 4, 5},  // 26 - control: a word without any 'd' already worked
+		// A spec that ends with an operator but no operand: the dangling '+'/'-'/'x' (and any trailing spaces) must be
+		// excluded from the returned span so a consumer slicing text[start:end] gets just the dice spec.
+		{"d6+", 0, 2},    // 27
+		{"d6-", 0, 2},    // 28
+		{"3d6x", 0, 3},   // 29
+		{"d6+x", 0, 2},   // 30 - multiple dangling operators
+		{"2d6+2x", 0, 5}, // 31 - trailing 'x' trimmed, modifier retained
+		{"d6+ ", 0, 2},   // 32 - operator followed by a trailing space
+		{"3d", 0, 2},     // 33 - control: a trailing 'd' (meaning d6) is a valid operand, not trimmed
 	} {
 		desc := fmt.Sprintf("Table index %d: %s", i, one.Text)
 		start, end := dice.ExtractDicePosition(one.Text)
