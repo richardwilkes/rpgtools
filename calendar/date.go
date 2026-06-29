@@ -137,11 +137,8 @@ func (date Date) WeekDayName() string {
 
 // Era returns the era suffix for the year.
 func (date Date) Era() string {
-	cal := date.calendar()
-	if date.Year() < 0 {
-		return cal.PreviousEra
-	}
-	return cal.Era
+	_, era := date.calendar().eraForYear(date.Year())
+	return era
 }
 
 // String returns a date in the ShortFormat.
@@ -231,31 +228,15 @@ func (date Date) WriteFormat(w io.Writer, layout string) {
 				fmt.Fprintf(w, "%0[1]*[2]d", widthNeeded(cal.mostDaysInMonth()), dayInMonth)
 			case 'Y':
 				resolve()
-				if cal.PreviousEra != "" {
-					switch {
-					case cal.Era == cal.PreviousEra:
-						fmt.Fprintf(w, "%d %s", year, cal.PreviousEra)
-					case year < 0:
-						fmt.Fprintf(w, "%d %s", -year, cal.PreviousEra)
-					default:
-						fmt.Fprint(w, year)
-					}
+				displayYear, era := cal.eraForYear(year)
+				if era != "" && era == cal.PreviousEra {
+					fmt.Fprintf(w, "%d %s", displayYear, era)
 				} else {
-					fmt.Fprint(w, year)
+					fmt.Fprint(w, displayYear)
 				}
 			case 'y':
 				resolve()
-				// Equivalent to date.Era(): a negative year falls in the previous era, otherwise the current one.
-				era := cal.Era
-				if year < 0 {
-					era = cal.PreviousEra
-				}
-				// Use a copy so flipping the sign for a distinct-era display does not disturb the shared year that
-				// other directives in the same layout read.
-				displayYear := year
-				if displayYear < 0 && era != "" && cal.Era != cal.PreviousEra {
-					displayYear = -displayYear
-				}
+				displayYear, era := cal.eraForYear(year)
 				if era != "" {
 					fmt.Fprintf(w, "%d %s", displayYear, era)
 				} else {

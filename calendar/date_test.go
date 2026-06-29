@@ -252,6 +252,66 @@ func TestMediumFormatRoundTripsThroughParse(t *testing.T) {
 	}
 }
 
+// eraTestCalendar builds a small but valid calendar whose only interesting variation is its era pair.
+func eraTestCalendar(era, previousEra string) *calendar.Calendar {
+	return &calendar.Calendar{
+		DayZeroWeekDay: 0,
+		WeekDays:       []string{"A", "B", "C", "D", "E", "F", "G"},
+		Months:         []calendar.Month{{Name: "Janus", Days: 30}, {Name: "Febris", Days: 30}, {Name: "Martis", Days: 30}},
+		Seasons:        []calendar.Season{{Name: "S", StartMonth: 1, StartDay: 1, EndMonth: 3, EndDay: 30}},
+		Era:            era,
+		PreviousEra:    previousEra,
+	}
+}
+
+// TestEraDisplayModel pins the single era model (eraForYear) that %z, %Y, %y and Date.Era all build on, across the
+// three era configurations: distinct eras (the label carries the sign), a single shared label (the sign stays on the
+// number), and no eras at all. The Gregorian-only TestFormat does not cover the shared-label or empty configurations.
+func TestEraDisplayModel(t *testing.T) {
+	c := check.New(t)
+	for _, tc := range []struct { //nolint:govet // Not concerned with pointer bytes in tests
+		era, prev                    string
+		year                         int
+		wantZ, wantY, wanty, wantEra string
+	}{
+		// Distinct eras: %Y is terse (no label on a non-negative year), %y always labels, and a negative year shows its
+		// magnitude beside the previous-era label.
+		{"AD", "BC", 2017, "2017", "2017", "2017 AD", "AD"},
+		{"AD", "BC", -5, "-5", "5 BC", "5 BC", "BC"},
+		// A single shared era label: %Y and %y agree, and the sign stays on the number rather than the label.
+		{"AR", "AR", 2017, "2017", "2017 AR", "2017 AR", "AR"},
+		{"AR", "AR", -5, "-5", "-5 AR", "-5 AR", "AR"},
+		// No eras: nothing but the signed year, whichever directive is used.
+		{"", "", 2017, "2017", "2017", "2017", ""},
+		{"", "", -5, "-5", "-5", "-5", ""},
+	} {
+		cal := eraTestCalendar(tc.era, tc.prev)
+		d := cal.MustNewDate(2, 15, tc.year)
+		c.Equal(tc.wantZ, d.Format("%z"), "directive z, eras %q/%q, year %d", tc.era, tc.prev, tc.year)
+		c.Equal(tc.wantY, d.Format("%Y"), "directive Y, eras %q/%q, year %d", tc.era, tc.prev, tc.year)
+		c.Equal(tc.wanty, d.Format("%y"), "directive y, eras %q/%q, year %d", tc.era, tc.prev, tc.year)
+		c.Equal(tc.wantEra, d.Era(), "Era(), eras %q/%q, year %d", tc.era, tc.prev, tc.year)
+	}
+}
+
+// TestEraRoundTripsThroughParse verifies eraForYear and resolveEraSuffix are exact inverses: a date rendered with the
+// era-bearing %y directive parses back to the same date for every era configuration and sign, so the format and parse
+// sides of the era model cannot drift apart.
+func TestEraRoundTripsThroughParse(t *testing.T) {
+	c := check.New(t)
+	for _, eras := range [][2]string{{"AD", "BC"}, {"AR", "AR"}, {"", ""}} {
+		cal := eraTestCalendar(eras[0], eras[1])
+		c.NoError(cal.Valid())
+		for _, year := range []int{2017, 5, 1, -1, -5, -2017} {
+			want := cal.MustNewDate(2, 15, year)
+			formatted := want.Format("%M %D, %y")
+			got, err := cal.ParseDate(formatted)
+			c.NoError(err, "eras %q/%q year %d formatted as %q", eras[0], eras[1], year, formatted)
+			c.Equal(want, got, "eras %q/%q: %q did not round-trip", eras[0], eras[1], formatted)
+		}
+	}
+}
+
 func TestFormatZeroPadded(t *testing.T) {
 	c := check.New(t)
 	cal := calendar.Gregorian()

@@ -230,25 +230,50 @@ func (cal *Calendar) parseDate(month int, dayText, yearText, eraText string) (Da
 	if err != nil {
 		return Date{cal: cal}, errs.NewWithCausef(err, "invalid day text '%s'", dayText)
 	}
-	// A leading minus sign already places the year before the current era, so a recognized era suffix must agree with
-	// it. When the calendar names its two eras distinctly, a previous-era suffix on a non-negative year selects the
-	// previous era, but on a negative year it merely repeats the sign, and a current-era suffix on a negative year
-	// flatly contradicts it; reject both rather than silently choosing an interpretation. An empty or unrecognized
-	// suffix is left alone so ParseDate can still find dates embedded in surrounding prose.
+	if year, err = cal.resolveEraSuffix(year, yearText, eraText); err != nil {
+		return Date{cal: cal}, err
+	}
+	return cal.NewDate(month, day, year)
+}
+
+// eraForYear maps a signed internal year to the year value and era label that represent it for display. It is the
+// single definition of the calendar's era model that Date.Era and the %y/%Y format directives build on, and
+// resolveEraSuffix is its parse-side inverse. A negative year belongs to the previous era and a non-negative year to
+// the current era. When the two eras are distinct the era label carries the sign, so the magnitude is returned (a year
+// of -5 with eras "AD"/"BC" yields 5, "BC"); when the eras are empty or identical there is no distinct label to carry
+// the sign, so the signed year is returned unchanged (-5 with eras "AR"/"AR" yields -5, "AR").
+func (cal *Calendar) eraForYear(year int) (displayYear int, era string) {
+	era = cal.Era
+	if year < 0 {
+		era = cal.PreviousEra
+	}
+	displayYear = year
+	if year < 0 && era != "" && cal.Era != cal.PreviousEra {
+		displayYear = -year
+	}
+	return displayYear, era
+}
+
+// resolveEraSuffix folds a recognized era suffix into the sign of a parsed year, the parse-side inverse of eraForYear.
+// A leading minus sign already places the year before the current era, so a recognized suffix must agree with it. When
+// the calendar names its two eras distinctly, a previous-era suffix on a non-negative year selects the previous era,
+// but on a negative year it merely repeats the sign, and a current-era suffix on a negative year flatly contradicts it;
+// reject both rather than silently choosing an interpretation. An empty or unrecognized suffix is left alone so
+// ParseDate can still find dates embedded in surrounding prose. yearText and eraText are the original matched text,
+// used only for the error messages.
+func (cal *Calendar) resolveEraSuffix(year int, yearText, eraText string) (int, error) {
 	distinctEras := cal.Era != cal.PreviousEra
 	previousEraSuffix := eraText != "" && distinctEras && strings.EqualFold(cal.PreviousEra, eraText)
 	currentEraSuffix := eraText != "" && distinctEras && strings.EqualFold(cal.Era, eraText)
 	switch {
 	case year < 0 && previousEraSuffix:
-		return Date{cal: cal}, errs.Newf("year '%s' and previous-era suffix '%s' both indicate the previous era",
-			yearText, eraText)
+		return 0, errs.Newf("year '%s' and previous-era suffix '%s' both indicate the previous era", yearText, eraText)
 	case year < 0 && currentEraSuffix:
-		return Date{cal: cal}, errs.Newf("negative year '%s' contradicts the current-era suffix '%s'",
-			yearText, eraText)
+		return 0, errs.Newf("negative year '%s' contradicts the current-era suffix '%s'", yearText, eraText)
 	case previousEraSuffix:
 		year = -year
 	}
-	return cal.NewDate(month, day, year)
+	return year, nil
 }
 
 // MinDaysPerYear returns the minimum number of days in a year.
