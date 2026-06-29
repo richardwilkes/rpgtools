@@ -12,11 +12,9 @@ package names
 import (
 	"iter"
 	"maps"
-	"slices"
 	"strings"
 
 	"github.com/richardwilkes/toolbox/v2/xrand"
-	"github.com/richardwilkes/toolbox/v2/xstrings"
 )
 
 var _ Namer = &SimpleNamer{}
@@ -51,29 +49,21 @@ func NewSimpleUnweightedNamer(data []string, lowered, firstToUpper bool) *Simple
 }
 
 func newSimpleNamer(data iter.Seq2[string, int], lowered, firstToUpper bool) *SimpleNamer {
-	n := SimpleNamer{
-		lowered:      lowered,
-		firstToUpper: firstToUpper,
-	}
+	counts := make(map[string]int)
 	for name, count := range data {
 		if count > 0 {
 			if name = strings.TrimSpace(name); name != "" {
-				// cumulative temporarily holds this entry's own weight (capped at maxWeight); it is folded into a
-				// running int64 total below.
-				n.data = append(n.data, nameCount{name: name, cumulative: int64(clampWeight(count))})
+				counts[name] = addWeight(counts[name], count)
 			}
 		}
 	}
-	// Sort by name so a seeded randomizer reproduces the same selections across runs, then convert each entry's weight
-	// into the running cumulative total that pickWeighted expects. The total is an int64 so summing the capped weights
-	// cannot overflow.
-	slices.SortFunc(n.data, func(a, b nameCount) int { return xstrings.NaturalCmp(a.name, b.name, false) })
-	var total int64
-	for i := range n.data {
-		total += n.data[i].cumulative
-		n.data[i].cumulative = total
+	return &SimpleNamer{
+		data: cumulativeWeights(counts, func(name string, cumulative int64) nameCount {
+			return nameCount{name: name, cumulative: cumulative}
+		}),
+		lowered:      lowered,
+		firstToUpper: firstToUpper,
 	}
-	return &n
 }
 
 // GenerateName generates a new random name.

@@ -34,6 +34,32 @@ func TestSimple(t *testing.T) {
 	c.True(exists, "expecting to find 'bB' in: %v", counts)
 }
 
+func TestSimpleReproducibleAcrossBuilds(t *testing.T) {
+	c := check.New(t)
+	// Go randomizes map iteration order on every range, so rebuilding a SimpleNamer from identical data exercises
+	// different insertion orders. The cumulative-weight table, and therefore the names a seeded randomizer produces,
+	// must not depend on that order. Routing the build through the shared cumulativeWeights helper (which sorts the
+	// names) preserves this guarantee; the data has many distinct names so a non-deterministic order would change it.
+	reproData := map[string]int{
+		"alpha": 1, "bravo": 2, "charlie": 3, "delta": 1, "echo": 2,
+		"foxtrot": 3, "golf": 1, "hotel": 2, "india": 3, "juliet": 1,
+	}
+	const seed, samples = 42, 50
+	names := func() []string {
+		n := NewSimpleNamer(reproData, false, false)
+		rnd := newSeededRand(seed)
+		out := make([]string, samples)
+		for i := range out {
+			out[i] = n.GenerateNameWithRandomizer(rnd)
+		}
+		return out
+	}
+	want := names()
+	for range 20 {
+		c.Equal(want, names(), "SimpleNamer output must be reproducible across rebuilds")
+	}
+}
+
 func TestSimpleLowered(t *testing.T) {
 	c := check.New(t)
 	s := NewSimpleNamer(data, true, false)
