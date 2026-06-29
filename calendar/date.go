@@ -52,11 +52,15 @@ func (date Date) Year() int {
 	// which was O(date.Days) and effectively hung for very large day counts (date.Days is an unbounded public field).
 	// Year 0 does not exist, so a non-negative date is searched among years >= 1 and a negative date among years <= -1,
 	// keeping the search clear of the gap. The bounds rely on every year being at least minDays long, so that
-	// yearToDays(year) >= (year-1)*minDays for a positive year and yearToDays(year) <= year*minDays for a negative one:
-	// hi is then past the answer and lo is at or before it.
-	lo, hi := 1, date.Days/minDays+2
+	// yearToDays(year) >= (year-1)*minDays for a positive year and yearToDays(year) <= year*minDays for a negative one;
+	// the answer therefore satisfies year <= date.Days/minDays+1 (and year >= date.Days/minDays-1 when negative), so
+	// these bounds bracket it. The "+1"/"-1" are deliberately as tight as correctness allows: a looser bound would make
+	// the search probe a year whose yearToDaysWith leading term ((year-1)*minDays) overflows int near the int limits,
+	// silently corrupting the comparison. With minDays >= 2 (enforced by checkUsable) the probed extreme stays within
+	// (date.Days/minDays)*minDays <= date.Days, which cannot overflow.
+	lo, hi := 1, date.Days/minDays+1
 	if date.Days < 0 {
-		lo, hi = date.Days/minDays-2, -1
+		lo, hi = date.Days/minDays-1, -1
 	}
 	for lo < hi {
 		mid := lo + (hi-lo+1)/2 // bias toward hi so lo still advances when only one candidate separates them

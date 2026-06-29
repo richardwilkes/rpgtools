@@ -12,6 +12,7 @@ package calendar_test
 import (
 	"bytes"
 	"encoding/json"
+	"math"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -102,6 +103,33 @@ func TestYearLargeDays(t *testing.T) {
 			next = 1
 		}
 		c.True(days < cal.MustNewDate(1, 1, next).Days, "1/1/%d must start after days=%d", next, days)
+	}
+}
+
+// TestYearInt64Extremes guards the overflow-safe search bounds in Year(). A Date.Days value within a year of the int64
+// limits once drove the bound arithmetic (and the yearToDaysWith probe at that bound) to overflow, so Year() returned a
+// wildly wrong, even sign-flipped, result. checkUsable now guarantees minDays >= 2 and the search bounds are kept as
+// tight as correctness allows, so the search never probes a year whose day count overflows. These cases use a minimal
+// two-day, no-leap calendar (minDays == 2): year y then spans days (y-1)*2 .. y*2-1 for y > 0 and y*2 .. (y+1)*2-1 for
+// y < 0, which pins the expected year at each extreme.
+func TestYearInt64Extremes(t *testing.T) {
+	c := check.New(t)
+	cal := &calendar.Calendar{
+		WeekDays: []string{"A", "B"},
+		Months:   []calendar.Month{{Name: "First", Days: 1}, {Name: "Second", Days: 1}},
+	}
+	// math.MaxInt: year 4611686018427387904 starts on day MaxInt-1; the following year would start past MaxInt.
+	c.Equal(4611686018427387904, cal.NewDateByDays(math.MaxInt).Year())
+	// math.MinInt: year -4611686018427387904 starts exactly on day MinInt.
+	c.Equal(-4611686018427387904, cal.NewDateByDays(math.MinInt).Year())
+	// Year must stay non-decreasing in Days right at the limits, where the off-by-one used to appear.
+	for _, base := range []int{math.MaxInt, math.MinInt + 5} {
+		for off := 1; off <= 5; off++ {
+			earlier := cal.NewDateByDays(base - off).Year()
+			later := cal.NewDateByDays(base - off + 1).Year()
+			c.True(earlier <= later, "Year must be non-decreasing in Days near %d (off=%d): %d > %d",
+				base, off, earlier, later)
+		}
 	}
 }
 
@@ -645,10 +673,12 @@ func TestValidCalendarIsUsableForDateMath(t *testing.T) {
 	// constructor gate ever drift apart, a valid calendar that panics on access is caught here.
 	for _, cal := range []*calendar.Calendar{
 		calendar.Gregorian(),
-		{ // Minimal: a single week day (day-zero index 0) and a single one-day month, no leap year.
+		{
+			// Minimal: a single week day (day-zero index 0) and a single two-day month (the fewest a usable calendar
+			// may have), no leap year.
 			WeekDays: []string{"A"},
-			Months:   []calendar.Month{{Name: "M", Days: 1}},
-			Seasons:  []calendar.Season{{Name: "S", StartMonth: 1, StartDay: 1, EndMonth: 1, EndDay: 1}},
+			Months:   []calendar.Month{{Name: "M", Days: 2}},
+			Seasons:  []calendar.Season{{Name: "S", StartMonth: 1, StartDay: 1, EndMonth: 1, EndDay: 2}},
 		},
 		{ // Day-zero index at the last week day, two months, and a valid Except-only leap rule.
 			DayZeroWeekDay: 2,
