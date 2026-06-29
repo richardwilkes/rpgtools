@@ -632,14 +632,14 @@ func TestUnusableDefaultPanicsClearly(t *testing.T) {
 			}
 		}()
 		fn()
-		return
+		return msg, panicked
 	}
 
 	// A calendar with no week days and no months never passed checkUsable; every accessor must surface its error rather
 	// than dividing by zero.
 	calendar.Default = &calendar.Calendar{}
 	var date calendar.Date
-	for _, tc := range []struct {
+	for _, tc := range []struct { //nolint:govet // Not concerned with pointer bytes in tests
 		name string
 		fn   func()
 	}{

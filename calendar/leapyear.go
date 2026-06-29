@@ -31,7 +31,7 @@ func (leapYear *LeapYear) Valid(cal *Calendar) error {
 		if leapYear.Except <= leapYear.Every {
 			return errs.New("LeapYear.Except must be greater than LeapYear.Every if not 0")
 		}
-		if (leapYear.Except/leapYear.Every)*leapYear.Every != leapYear.Except {
+		if leapYear.Except%leapYear.Every != 0 {
 			return errs.New("LeapYear.Except must be a multiple of LeapYear.Every")
 		}
 	}
@@ -42,7 +42,7 @@ func (leapYear *LeapYear) Valid(cal *Calendar) error {
 		if leapYear.Unless <= leapYear.Except {
 			return errs.New("LeapYear.Unless must be greater than LeapYear.Except if not 0")
 		}
-		if (leapYear.Unless/leapYear.Except)*leapYear.Except != leapYear.Unless {
+		if leapYear.Unless%leapYear.Except != 0 {
 			return errs.New("LeapYear.Unless must be a multiple of LeapYear.Except")
 		}
 	}

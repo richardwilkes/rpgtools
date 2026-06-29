@@ -56,6 +56,36 @@ func TestLeapYearIs(t *testing.T) {
 	c.True(ly.Is(-401))
 }
 
+func TestLeapYearValidMultiples(t *testing.T) {
+	c := check.New(t)
+	// LeapYear.Valid only consults len(cal.Months) for the Month-range check; the rest of the calendar is irrelevant to
+	// the Every/Except/Unless divisibility rules exercised here.
+	cal := &calendar.Calendar{Months: []calendar.Month{
+		{Name: "M1", Days: 30}, {Name: "M2", Days: 30}, {Name: "M3", Days: 30}, {Name: "M4", Days: 30},
+	}}
+	for _, tc := range []struct {
+		name string
+		ly   calendar.LeapYear
+		ok   bool
+	}{
+		{"every only", calendar.LeapYear{Month: 1, Every: 4}, true},
+		{"except is a multiple of every", calendar.LeapYear{Month: 1, Every: 4, Except: 8}, true},
+		{"except not a multiple of every", calendar.LeapYear{Month: 1, Every: 4, Except: 6}, false},
+		{"gregorian-style multiples", calendar.LeapYear{Month: 1, Every: 4, Except: 100, Unless: 400}, true},
+		{"unless is a multiple of except", calendar.LeapYear{Month: 1, Every: 3, Except: 9, Unless: 27}, true},
+		{"unless not a multiple of except", calendar.LeapYear{Month: 1, Every: 4, Except: 8, Unless: 20}, false},
+		{"every below 2", calendar.LeapYear{Month: 1, Every: 1}, false},
+		{"except not greater than every", calendar.LeapYear{Month: 1, Every: 4, Except: 4}, false},
+	} {
+		ly := tc.ly
+		if tc.ok {
+			c.NoError(ly.Valid(cal), tc.name)
+		} else {
+			c.HasError(ly.Valid(cal), tc.name)
+		}
+	}
+}
+
 func TestLeapYearSince(t *testing.T) {
 	c := check.New(t)
 	ly := &calendar.LeapYear{
