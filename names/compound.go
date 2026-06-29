@@ -52,11 +52,15 @@ func (n *CompoundNamer) GenerateName() string {
 // GenerateNameWithRandomizer generates a new random name using the specified randomizer.
 func (n *CompoundNamer) GenerateNameWithRandomizer(rnd xrand.Randomizer) string {
 	var buffer strings.Builder
-	for i, namer := range n.namers {
-		if i != 0 {
+	for _, namer := range n.namers {
+		part := namer.GenerateNameWithRandomizer(rnd)
+		if part == "" {
+			continue
+		}
+		if buffer.Len() != 0 {
 			buffer.WriteString(n.separator)
 		}
-		buffer.WriteString(namer.GenerateNameWithRandomizer(rnd))
+		buffer.WriteString(part)
 	}
 	return applyCase(buffer.String(), n.lowered, n.firstToUpper)
 }

@@ -30,9 +30,11 @@ func MustLoadFromReader(r io.Reader) map[string]int {
 }
 
 // LoadFromReader loads a name set from the provided reader. The data should consist of lines of text, each of which
-// contains a name and a count, separated by a comma. The trailing comma and count may be omitted, or the count may be
-// unparseable, in which case a value of 1 is assumed. An explicit count of less than 1 removes the name from the
-// returned set (matching the namer constructors), so a data author can suppress a name by giving it a count of 0.
+// contains a name optionally followed by a comma and a count. A count is recognized only when the text after the final
+// comma parses as an integer; a dangling trailing comma (with nothing after it) is dropped, and any other comma is part
+// of the name, so a name that itself contains a comma, such as "Smith, Jr.", is kept intact rather than truncated. When
+// no count is given a value of 1 is assumed. An explicit count of less than 1 removes the name from the returned set
+// (matching the namer constructors), so a data author can suppress a name by giving it a count of 0.
 //
 // Lines are read with the default bufio.Scanner buffer, so a single line longer than roughly 64KB is not split or
 // truncated: the scan stops at that line and a non-nil error is returned along with the names accumulated so far. A
@@ -43,16 +45,17 @@ func LoadFromReader(r io.Reader) (map[string]int, error) {
 	for scanner.Scan() {
 		line := scanner.Text()
 		name := line
-		countText := ""
+		count := int64(1)
 		if idx := strings.LastIndex(line, ","); idx >= 0 {
-			name, countText = line[:idx], line[idx+1:]
+			if suffix := strings.TrimSpace(line[idx+1:]); suffix == "" {
+				name = line[:idx]
+			} else if parsed, err := strconv.ParseInt(suffix, 10, 64); err == nil {
+				name = line[:idx]
+				count = parsed
+			}
 		}
 		if name = strings.TrimSpace(name); name == "" {
 			continue
-		}
-		count := int64(1)
-		if parsed, err := strconv.ParseInt(strings.TrimSpace(countText), 10, 64); err == nil {
-			count = parsed
 		}
 		// Accumulate in int64 and saturate the per-name total at the int32 range. Without this, two very large counts
 		// for the same name could wrap a platform int negative, and the "< 1" filter below would then delete the name

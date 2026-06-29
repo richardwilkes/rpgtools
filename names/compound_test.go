@@ -47,3 +47,26 @@ func TestCompoundSkipsNilNamers(t *testing.T) {
 		c.Equal(one.expected, result, "table index %d", i)
 	}
 }
+
+//nolint:goconst // The tests are more readable without constants for duplicated string
+func TestCompoundSkipsEmptyNamers(t *testing.T) {
+	c := check.New(t)
+	a := fixedNamer("A")
+	b := fixedNamer("B")
+	empty := fixedNamer("")
+
+	// A namer that yields an empty string (e.g. one built from empty or fully-suppressed data) contributes nothing to
+	// separate, so it must not leave a doubled, leading, or trailing separator, just as a nil namer does not.
+	for i, one := range []struct {
+		expected string
+		namers   []Namer
+	}{
+		{"A-B", []Namer{a, empty, b}},   // 0 - empty in the middle
+		{"A-B", []Namer{empty, a, b}},   // 1 - empty at the start
+		{"A-B", []Namer{a, b, empty}},   // 2 - empty at the end
+		{"A", []Namer{empty, a, empty}}, // 3 - only one survivor
+		{"", []Namer{empty, empty}},     // 4 - nothing survives
+	} {
+		c.Equal(one.expected, NewCompoundNamer("-", false, false, one.namers...).GenerateName(), "table index %d", i)
+	}
+}
