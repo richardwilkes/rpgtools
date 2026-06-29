@@ -33,6 +33,12 @@ var (
 	regexMonthDDYYYY = regexp.MustCompile("([[:alpha:]]+) *([[:digit:]]+), *(-?[[:digit:]]+) *([[:alpha:]]+)?")
 )
 
+// abbreviatedNameLength is the number of leading characters used to abbreviate a month or weekday name. The %m and %w
+// format directives emit this many characters, and monthFromText accepts a month abbreviation of this length, so an
+// emitted short month name parses back to the same month (e.g. MediumFormat round-trips through ParseDate). Keeping
+// both sides driven by this single constant prevents the emit and parse widths from silently drifting apart.
+const abbreviatedNameLength = 3
+
 // Calendar holds the data for the calendar.
 type Calendar struct {
 	LeapYear       *LeapYear `json:"leapyear,omitempty" yaml:",omitempty"`
@@ -191,7 +197,7 @@ func (cal *Calendar) monthFromText(text string) (int, error) {
 	}
 	month := 0
 	for i := range cal.Months {
-		if strings.EqualFold(text, xstrings.FirstN(cal.Months[i].Name, 3)) {
+		if strings.EqualFold(text, xstrings.FirstN(cal.Months[i].Name, abbreviatedNameLength)) {
 			if month != 0 {
 				return 0, errs.Newf("ambiguous month text '%s'", text)
 			}

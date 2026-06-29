@@ -208,13 +208,13 @@ func (date Date) WriteFormat(w io.Writer, layout string) {
 			case 'W':
 				fmt.Fprint(w, date.WeekDayName())
 			case 'w':
-				fmt.Fprint(w, xstrings.FirstN(date.WeekDayName(), 3))
+				fmt.Fprint(w, xstrings.FirstN(date.WeekDayName(), abbreviatedNameLength))
 			case 'M':
 				resolve()
 				fmt.Fprint(w, cal.Months[month-1].Name)
 			case 'm':
 				resolve()
-				fmt.Fprint(w, xstrings.FirstN(cal.Months[month-1].Name, 3))
+				fmt.Fprint(w, xstrings.FirstN(cal.Months[month-1].Name, abbreviatedNameLength))
 			case 'N':
 				resolve()
 				fmt.Fprint(w, month)

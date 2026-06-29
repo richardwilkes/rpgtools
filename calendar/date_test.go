@@ -235,6 +235,23 @@ func TestFormatRepeatedDirectivesConsistent(t *testing.T) {
 	c.Equal("2017|2017 AD|2017", d.Format("%z|%y|%z"))
 }
 
+// TestMediumFormatRoundTripsThroughParse verifies the abbreviated month name that %m emits is exactly the abbreviation
+// monthFromText accepts when parsing, so MediumFormat output parses back to the same date for every month. Both the
+// emit and parse sides are driven by abbreviatedNameLength, so this round-trip holds by construction; the test guards
+// against the two widths drifting apart again.
+func TestMediumFormatRoundTripsThroughParse(t *testing.T) {
+	c := check.New(t)
+	cal := calendar.Gregorian()
+	calendar.Default = cal
+	for month := 1; month <= 12; month++ {
+		want := cal.MustNewDate(month, 15, 2017)
+		formatted := want.Format(calendar.MediumFormat) // uses %m, the abbreviated month name
+		got, err := cal.ParseDate(formatted)
+		c.NoError(err, "month %d formatted as %q", month, formatted)
+		c.Equal(want, got, "month %d round-trip via %q", month, formatted)
+	}
+}
+
 func TestFormatZeroPadded(t *testing.T) {
 	c := check.New(t)
 	cal := calendar.Gregorian()
