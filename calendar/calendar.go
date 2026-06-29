@@ -28,7 +28,7 @@ var (
 	// ensuring it is done in a thread-safe context, as this code assumes it is effectively immutable when used.
 	Default = Gregorian()
 	// "9/22/2017" or "9/22/2017 AD"
-	regexMMDDYYY = regexp.MustCompile("([[:digit:]]+)/([[:digit:]]+)/(-?[[:digit:]]+) *([[:alpha:]]+)?")
+	regexMMDDYYYY = regexp.MustCompile("([[:digit:]]+)/([[:digit:]]+)/(-?[[:digit:]]+) *([[:alpha:]]+)?")
 	// "September 22, 2017 AD", "September 22, 2017", "Sep 22, 2017 AD", or "Sep 22, 2017"
 	regexMonthDDYYYY = regexp.MustCompile("([[:alpha:]]+) *([[:digit:]]+), *(-?[[:digit:]]+) *([[:alpha:]]+)?")
 )
@@ -180,7 +180,7 @@ func (cal *Calendar) yearToDaysWith(year, minDaysPerYear int) int {
 
 // ParseDate creates a new date from the specified text.
 func (cal *Calendar) ParseDate(in string) (Date, error) {
-	if parts := regexMMDDYYY.FindStringSubmatch(in); parts != nil {
+	if parts := regexMMDDYYYY.FindStringSubmatch(in); parts != nil {
 		month, err := strconv.Atoi(parts[1])
 		if err != nil {
 			return Date{cal: cal}, errs.NewWithCausef(err, "invalid month text '%s'", parts[1])

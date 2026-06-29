@@ -135,6 +135,14 @@ func (date Date) WeekDayName() string {
 	return date.calendar().WeekDays[date.WeekDay()]
 }
 
+// Season returns the season that contains the date and true, or a zero Season and false when no season covers it. When
+// seasons overlap, the first one in declaration order that contains the date is returned. See Season for how a season's
+// span (including one that wraps the year boundary) is interpreted.
+func (date Date) Season() (Season, bool) {
+	_, month, dayInMonth, _ := date.resolve()
+	return date.calendar().seasonFor(month, dayInMonth)
+}
+
 // Era returns the era suffix for the year.
 func (date Date) Era() string {
 	_, era := date.calendar().eraForYear(date.Year())
