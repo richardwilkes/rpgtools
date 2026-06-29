@@ -15,75 +15,44 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/richardwilkes/toolbox/v2/xrand"
 	"github.com/richardwilkes/toolbox/v2/xunicode"
 )
 
-type stringLast struct {
-	s    string
-	last int
-}
+var (
+	_ Namer                 = &MarkovRunNamer{}
+	_ markovStepper[string] = runStepper{}
+)
 
 // MarkovRunNamer provides a name generator that creates a name based on markov chains of runs of vowels or consonants.
 type MarkovRunNamer struct {
-	mapping      map[string][]stringLast
-	final        map[string]struct{}
-	lengths      [][2]int
-	maxLength    int
-	lowered      bool
-	firstToUpper bool
+	*markov[string]
 }
 
-// NewMarkovRunNamer creates a new MarkovRunNamer. The data should be a map of names to a count which indicates how
-// common the name is relative to others in the set. Any count less than 1 effectively removes the name from the set. If
-// 'lowered' is true, then the result will be forced to lowercase. If 'firstToUpper' is true, then the result will have
-// its first letter capitalized.
-func NewMarkovRunNamer(data map[string]int, lowered, firstToUpper bool) *MarkovRunNamer {
-	return newMarkovRunNamer(maps.All(data), lowered, firstToUpper)
+// runStepper generates one vowel/consonant run at a time, keyed on the previous run.
+type runStepper struct{}
+
+func (runStepper) initialKey() string {
+	return ""
 }
 
-// NewMarkovRunUnweightedNamer creates a new MarkovRunNamer. The data should be a set of names to train the model with.
-// If 'lowered' is true, then the result will be forced to lowercase. If 'firstToUpper' is true, then the result will
-// have its first letter capitalized.
-func NewMarkovRunUnweightedNamer(data []string, lowered, firstToUpper bool) *MarkovRunNamer {
-	return newMarkovRunNamer(unweighted(data), lowered, firstToUpper)
+func (runStepper) steps(name string) []string {
+	return decompose(name)
 }
 
-func newMarkovRunNamer(data iter.Seq2[string, int], lowered, firstToUpper bool) *MarkovRunNamer {
-	n := &MarkovRunNamer{
-		final:        make(map[string]struct{}),
-		lowered:      lowered,
-		firstToUpper: firstToUpper,
-	}
-	mapping := make(map[string]map[string]int)
-	lengths := make(map[int]int)
-	for name, count := range data {
-		if count > 0 {
-			if name = strings.TrimSpace(name); name != "" {
-				n.add(name, count, mapping, lengths)
-			}
-		}
-	}
-	n.finish(mapping, lengths)
-	return n
+func (runStepper) advance(_, step string) string {
+	return step
 }
 
-func (n *MarkovRunNamer) add(name string, count int, mapping map[string]map[string]int, lengths map[int]int) {
-	last := ""
-	for _, next := range n.decompose(name) {
-		m, ok := mapping[last]
-		if !ok {
-			m = make(map[string]int)
-			mapping[last] = m
-		}
-		m[next] += count
-		last = next
-	}
-	n.final[last] = struct{}{}
-	lengths[utf8.RuneCountInString(name)] += count
+func (runStepper) length(step string) int {
+	return utf8.RuneCountInString(step)
 }
 
-func (n *MarkovRunNamer) decompose(s string) []string {
+func (runStepper) write(b *strings.Builder, step string) {
+	b.WriteString(step)
+}
+
+// decompose splits s into a sequence of maximal runs, each consisting entirely of vowels or entirely of consonants.
+func decompose(s string) []string {
 	var runs []string
 	var buffer strings.Builder
 	state := -1
@@ -123,55 +92,21 @@ func (n *MarkovRunNamer) decompose(s string) []string {
 	return runs
 }
 
-func (n *MarkovRunNamer) finish(mapping map[string]map[string]int, lengths map[int]int) {
-	n.lengths, n.maxLength = computeLengths(lengths)
-	n.mapping = cumulativePairs(mapping, func(s string, cumulative int) stringLast {
-		return stringLast{s: s, last: cumulative}
-	})
+// NewMarkovRunNamer creates a new MarkovRunNamer. The data should be a map of names to a count which indicates how
+// common the name is relative to others in the set. Any count less than 1 effectively removes the name from the set. If
+// 'lowered' is true, then the result will be forced to lowercase. If 'firstToUpper' is true, then the result will have
+// its first letter capitalized.
+func NewMarkovRunNamer(data map[string]int, lowered, firstToUpper bool) *MarkovRunNamer {
+	return newMarkovRunNamer(maps.All(data), lowered, firstToUpper)
 }
 
-// GenerateName generates a new random name.
-func (n *MarkovRunNamer) GenerateName() string {
-	return n.GenerateNameWithRandomizer(xrand.New())
+// NewMarkovRunUnweightedNamer creates a new MarkovRunNamer. The data should be a set of names to train the model with.
+// If 'lowered' is true, then the result will be forced to lowercase. If 'firstToUpper' is true, then the result will
+// have its first letter capitalized.
+func NewMarkovRunUnweightedNamer(data []string, lowered, firstToUpper bool) *MarkovRunNamer {
+	return newMarkovRunNamer(unweighted(data), lowered, firstToUpper)
 }
 
-// GenerateNameWithRandomizer generates a new random name using the specified randomizer.
-func (n *MarkovRunNamer) GenerateNameWithRandomizer(rnd xrand.Randomizer) string {
-	var buffer strings.Builder
-	maximum := selectMax(n.lengths, rnd)
-	// Past 'maximum' the loop keeps going only to end on a natural (final) run. Training data whose transition graph
-	// cycles without a reachable final run would otherwise loop forever, so cap the length at twice the longest
-	// training name as a safety valve; legitimate data never reaches it.
-	hardCap := 2 * n.maxLength
-	last := ""
-	count := 0
-	for {
-		m, ok := n.mapping[last]
-		if !ok {
-			break
-		}
-		next := n.nextPart(m, rnd)
-		if next == "" {
-			break
-		}
-		last = next
-		buffer.WriteString(next)
-		count += utf8.RuneCountInString(next)
-		if count >= maximum {
-			if _, final := n.final[next]; final {
-				break
-			}
-		}
-		if count >= hardCap {
-			break
-		}
-	}
-	return applyCase(buffer.String(), n.lowered, n.firstToUpper)
-}
-
-func (n *MarkovRunNamer) nextPart(m []stringLast, rnd xrand.Randomizer) string {
-	if e, ok := pickWeighted(m, rnd, func(e stringLast) int { return e.last }); ok {
-		return e.s
-	}
-	return ""
+func newMarkovRunNamer(data iter.Seq2[string, int], lowered, firstToUpper bool) *MarkovRunNamer {
+	return &MarkovRunNamer{newMarkov[string](runStepper{}, data, lowered, firstToUpper)}
 }

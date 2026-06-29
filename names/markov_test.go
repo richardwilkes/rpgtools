@@ -124,30 +124,42 @@ func TestMarkovGenerationHasHardCap(t *testing.T) {
 	// set. The generation loop only stops on a dead-end key, an empty token, or a final token past 'maximum', so
 	// without a hard cap it would spin forever. The cap bounds the result at twice the longest training length
 	// (2*4 = 8 here).
-	letter := &MarkovLetterNamer{
-		depth: 1,
-		mapping: map[string][]runeLast{
-			"\x00": {{ch: 'a', last: 1}},
-			"a":    {{ch: 'b', last: 1}},
-			"b":    {{ch: 'a', last: 1}},
+	letter := &MarkovLetterNamer{&markov[rune]{
+		stepper: letterStepper{depth: 1},
+		mapping: map[string][]weightedStep[rune]{
+			"\x00": {{step: 'a', last: 1}},
+			"a":    {{step: 'b', last: 1}},
+			"b":    {{step: 'a', last: 1}},
 		},
 		final:     map[rune]struct{}{},
 		lengths:   [][2]int{{4, 1}},
 		maxLength: 4,
-	}
+	}}
 	c.Equal(8, utf8.RuneCountInString(letter.GenerateName()), "letter namer must stop at the hard cap")
 
-	run := &MarkovRunNamer{
-		mapping: map[string][]stringLast{
-			"":  {{s: "a", last: 1}},
-			"a": {{s: "b", last: 1}},
-			"b": {{s: "a", last: 1}},
+	run := &MarkovRunNamer{&markov[string]{
+		stepper: runStepper{},
+		mapping: map[string][]weightedStep[string]{
+			"":  {{step: "a", last: 1}},
+			"a": {{step: "b", last: 1}},
+			"b": {{step: "a", last: 1}},
 		},
 		final:     map[string]struct{}{},
 		lengths:   [][2]int{{4, 1}},
 		maxLength: 4,
-	}
+	}}
 	c.Equal(8, utf8.RuneCountInString(run.GenerateName()), "run namer must stop at the hard cap")
+}
+
+func TestMarkovCoreGeneratesDeterministically(t *testing.T) {
+	c := check.New(t)
+	// Both namers now run through the same generic core, so a fixed (always-first) randomizer must walk each chain
+	// deterministically: with a single training name and no branching, each namer reproduces that name exactly. This
+	// pins the shared build-and-generate path for the rune and the run step types alike.
+	letter := NewMarkovLetterNamer(1, map[string]int{"abc": 1}, false, false)
+	c.Equal("abc", letter.GenerateNameWithRandomizer(constRand(0)))
+	run := NewMarkovRunNamer(map[string]int{"aba": 1}, false, false)
+	c.Equal("aba", run.GenerateNameWithRandomizer(constRand(0)))
 }
 
 func TestMarkovLetterGenerationCapsInRunes(t *testing.T) {
