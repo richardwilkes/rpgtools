@@ -432,10 +432,44 @@ func TestExtractFirstPosition(t *testing.T) {
 		{"2d6+2x", 0, 5}, // 31 - trailing 'x' trimmed, modifier retained
 		{"d6+ ", 0, 2},   // 32 - operator followed by a trailing space
 		{"3d", 0, 2},     // 33 - control: a trailing 'd' (meaning d6) is a valid operand, not trimmed
+		// A lone 'd' with no digit is not a dice spec, even when it runs to the end of the text (where there is no
+		// following character to trigger the discard mid-scan).
+		{"d", -1, -1},      // 34
+		{"roll d", -1, -1}, // 35
+		// A trailing bare number followed only by spaces is still the spec; the spaces are trimmed. Contrast a bare
+		// number followed by prose ("13 years", cases 7-9), which is not reported.
+		{"5 ", 0, 1},      // 36
+		{"roll 5 ", 5, 6}, // 37
+		{"13 ", 0, 2},     // 38
+		// A bare number is reported only when it is the final token; a later token supersedes an earlier bare number.
+		{"5 5", 2, 3}, // 39
+		// A space between an operator and its operand ends the spec, matching New (which stops at the inner space and
+		// drops the operand), so the span excludes the unparsed tail rather than over-reporting it.
+		{"3d6+ 2", 0, 3}, // 40
+		{"d6- 5", 0, 2},  // 41
 	} {
 		desc := fmt.Sprintf("Table index %d: %s", i, one.Text)
 		start, end := dice.ExtractDicePosition(one.Text)
 		c.Equal(one.Start, start, desc)
 		c.Equal(one.End, end, desc)
+	}
+}
+
+// TestExtractedSpanIsCanonical pins the reconciliation guarantee between ExtractDicePosition and New: the span the
+// extractor returns is already exactly what New parses it back into, with no trailing operator or interior space that
+// New would silently drop. Before this was reconciled, e.g. "3d6+ 2" yielded the span "3d6+ 2" while New("3d6+ 2")
+// parsed only "3d6".
+func TestExtractedSpanIsCanonical(t *testing.T) {
+	defer func(prev bool) { dice.GURPSFormat = prev }(dice.GURPSFormat)
+	dice.GURPSFormat = false
+	c := check.New(t)
+	for _, text := range []string{
+		"3d6+ 2", "d6- 5", "5 ", "roll 5 ", "13 ", "5 5", "d6+", "3d6x", "2d6+2x", "d6+x", "roll 3d6 for me", "d6x2",
+		"5", "roll 5", "d6", "2d6+2",
+	} {
+		start, end := dice.ExtractDicePosition(text)
+		c.True(start >= 0 && start < end, text)
+		span := text[start:end]
+		c.Equal(span, dice.New(span).String(), text)
 	}
 }

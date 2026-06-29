@@ -63,7 +63,7 @@ func New(spec string) *Dice {
 	ch, i = nextChar(spec, i)
 	hadSides := false
 	hadD := false
-	if ch == 'd' || ch == 'D' {
+	if isDieMarker(rune(ch)) {
 		hadD = true
 		j := i
 		dice.Sides, i = extractValue(spec, i)
@@ -75,7 +75,7 @@ func New(spec string) *Dice {
 	} else if hadD && !hadSides && hadCount {
 		dice.Sides = 6
 	}
-	if ch == '+' || ch == '-' {
+	if isSign(rune(ch)) {
 		neg := ch == '-'
 		dice.Modifier, i = extractValue(spec, i)
 		if neg {
@@ -87,7 +87,7 @@ func New(spec string) *Dice {
 		dice.Modifier += dice.Count
 		dice.Count = 0
 	}
-	if ch == 'x' || ch == 'X' {
+	if isMultiplier(rune(ch)) {
 		dice.Multiplier, _ = extractValue(spec, i)
 	}
 	if dice.Multiplier == 0 {
@@ -107,7 +107,7 @@ func nextChar(in string, inPos int) (ch byte, outPos int) {
 func extractValue(in string, inPos int) (value, outPos int) {
 	for inPos < len(in) {
 		ch := in[inPos]
-		if ch < '0' || ch > '9' {
+		if !isDigit(rune(ch)) {
 			return value, inPos
 		}
 		if value < MaxValue {
@@ -122,34 +122,52 @@ func extractValue(in string, inPos int) (value, outPos int) {
 }
 
 // ExtractDicePosition returns the start (inclusive) and end (exclusive) index of the Dice specification. If none can be
-// found, -1, -1 will be returned.
+// found, -1, -1 will be returned. The span never contains an internal space and always begins with a digit or a die
+// marker, so re-parsing text[start:end] with New yields exactly the specification the span represents (New likewise
+// stops at the first space and ignores any dangling operator).
 func ExtractDicePosition(text string) (start, end int) {
 	start = -1
 	state := 0
-	foundDigit := false
-	hasD := false     // The current candidate contains a 'd'.
-	droppedD := false // A standalone (non-word) 'd' was discarded because no digit followed it.
-	dInWord := false  // The 'd' starting the current candidate is adjacent to a prose letter, so it is part of a word.
+	foundDigit := false // The current candidate contains at least one digit (a count or a number of sides).
+	hasD := false       // The current candidate contains a 'd'.
+	droppedD := false   // A standalone (non-word) 'd' was discarded because no digit followed it.
+	dInWord := false    // The 'd' starting the current candidate is adjacent to a prose letter, so it is part of a word.
 	maximum := len(text)
 	var prev rune
 	for i, ch := range text {
+		if state == 5 {
+			// A bare number was found and we are skipping the spaces that follow it. It stays a valid result only if
+			// the text ends here; any other character means the number was not the final token, so discard it and
+			// rescan from this character.
+			if ch == ' ' {
+				prev = ch
+				continue
+			}
+			start = -1
+			foundDigit = false
+			state = 0
+		}
 		switch state {
 		case 0: // Look for a leading number (with or without a sign) or a 'd'
 			switch {
-			case ch >= '0' && ch <= '9':
+			case isDigit(ch):
 				foundDigit = true
 				if start == -1 {
 					start = i
 				}
-			case ch == 'd' || ch == 'D':
+			case isDieMarker(ch):
 				if start == -1 {
 					start = i
 				}
 				hasD = true
 				dInWord = isProseLetter(prev)
 				state = 1
-			case ch == '+' || ch == '-':
+			case isSign(ch):
 				state = 2
+			case ch == ' ' && start != -1:
+				// A space after a bare number may just be trailing whitespace; defer judging it until we learn whether
+				// any non-space content follows (handled by the state == 5 branch above).
+				state = 5
 			default:
 				foundDigit = false
 				start = -1
@@ -157,7 +175,7 @@ func ExtractDicePosition(text string) (start, end int) {
 			}
 		case 1: // Got 'd', but may not have found a digit yet; allow digits, sign or 'x'
 			switch {
-			case ch >= '0' && ch <= '9':
+			case isDigit(ch):
 				foundDigit = true
 			case !foundDigit:
 				// Discard the 'd': no digit followed it, so it is not a die marker. Only remember the discard when the
@@ -169,23 +187,23 @@ func ExtractDicePosition(text string) (start, end int) {
 				start = -1
 				hasD = false
 				state = 0
-			case ch == '+' || ch == '-':
+			case isSign(ch):
 				state = 2
-			case ch == 'x' || ch == 'X':
+			case isMultiplier(ch):
 				state = 3
 			default:
 				state = 4
 			}
-		case 2: // Found a sign; allow digits or 'x'
-			if ch != ' ' && (ch < '0' || ch > '9') {
-				if ch == 'x' || ch == 'X' {
+		case 2: // Found a sign; allow digits or 'x'. A space ends the spec, just as it does in New.
+			if !isDigit(ch) {
+				if isMultiplier(ch) {
 					state = 3
 				} else {
 					state = 4
 				}
 			}
-		case 3: // Found an 'x'; allow digits
-			if ch != ' ' && (ch < '0' || ch > '9') {
+		case 3: // Found an 'x'; allow digits. A space ends the spec, just as it does in New.
+			if !isDigit(ch) {
 				state = 4
 			}
 		}
@@ -195,15 +213,13 @@ func ExtractDicePosition(text string) (start, end int) {
 		}
 		prev = ch
 	}
-	// Once a standalone 'd' has been discarded as non-dice notation, only a candidate that itself contains a 'd' is a
-	// real dice spec. Without this guard, the discarded 'd' would let an unrelated trailing bare number (such as the
-	// "5" in "d 5" or "d-5") be reported as the specification, which is inconsistent with bare numbers like "13 years"
-	// returning none. A 'd' embedded in a word (as in "read 5") is not treated as discarded, so it leaves a trailing
-	// bare number reportable just like prose without any 'd'.
-	if start != -1 && (hasD || !droppedD) {
-		for start < maximum && text[start] == ' ' {
-			start++
-		}
+	// A real specification must contain a digit, so a lone 'd' (as in "d" or "roll d", even at the end of the text) is
+	// rejected. Additionally, once a standalone 'd' has been discarded as non-dice notation, only a candidate that
+	// itself contains a 'd' is a real dice spec; without this the discarded 'd' would let an unrelated trailing bare
+	// number (the "5" in "d 5" or "d-5") be reported, which is inconsistent with bare numbers like "13 years" returning
+	// none. A 'd' embedded in a word (as in "read 5") is not treated as discarded, so it leaves a trailing bare number
+	// reportable just like prose without any 'd'.
+	if start != -1 && foundDigit && (hasD || !droppedD) {
 		// Trim a trailing operator ('+', '-' or 'x'/'X') left without an operand, plus any surrounding spaces, so the
 		// span covers only the dice spec itself (e.g. "d6+" yields "d6" and "3d6x" yields "3d6"). Within the span such
 		// an operator is always dangling, since an operand digit would otherwise follow it.
@@ -220,11 +236,23 @@ func ExtractDicePosition(text string) (start, end int) {
 	return -1, -1
 }
 
+// isDigit reports whether ch is an ASCII decimal digit.
+func isDigit(ch rune) bool { return ch >= '0' && ch <= '9' }
+
+// isDieMarker reports whether ch is the 'd' that separates a die count from the number of sides.
+func isDieMarker(ch rune) bool { return ch == 'd' || ch == 'D' }
+
+// isMultiplier reports whether ch is the 'x' that introduces a result multiplier.
+func isMultiplier(ch rune) bool { return ch == 'x' || ch == 'X' }
+
+// isSign reports whether ch is a modifier sign.
+func isSign(ch rune) bool { return ch == '+' || ch == '-' }
+
 // isProseLetter reports whether r is an alphabetic letter that is not significant to dice notation (the 'd' die marker
 // or the 'x' multiplier). A 'd' adjacent to such a letter belongs to an ordinary word rather than a dice specification,
 // so ExtractDicePosition must not treat it as a discarded die marker.
 func isProseLetter(r rune) bool {
-	return unicode.IsLetter(r) && r != 'd' && r != 'D' && r != 'x' && r != 'X'
+	return unicode.IsLetter(r) && !isDieMarker(r) && !isMultiplier(r)
 }
 
 // Minimum returns the minimum result. 'extraDiceFromModifiers' determines if modifiers greater than or equal to the
