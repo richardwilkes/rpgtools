@@ -79,6 +79,55 @@ func TestPickWeighted(t *testing.T) {
 	c.False(ok)
 }
 
+// TestPickWeightedMatchesLinearScan pins the binary-search selection to the reference linear scan it replaced: for every
+// draw value v in 1..total, pickWeighted must return the first entry whose cumulative weight reaches v. Any off-by-one
+// in the binary search would surface here as a boundary mismatch.
+func TestPickWeightedMatchesLinearScan(t *testing.T) {
+	c := check.New(t)
+	id := func(v int) int64 { return int64(v) }
+	// Cumulative weights for per-item weights 3,1,4,1,5,9,2,6 (total 31), so every entry has a distinct, varying width.
+	entries := []int{3, 4, 8, 9, 14, 23, 25, 31}
+	total := entries[len(entries)-1]
+	for j := 1; j <= total; j++ {
+		// constRand(j-1) forces Intn(total) to j-1, so pickWeighted's draw v becomes j.
+		got, ok := pickWeighted(entries, constRand(j-1), id)
+		c.True(ok, "draw %d must select something", j)
+		// Reference: the first entry whose cumulative weight is >= j.
+		want := -1
+		for _, e := range entries {
+			if e >= j {
+				want = e
+				break
+			}
+		}
+		c.Equal(want, got, "draw %d", j)
+	}
+}
+
+// TestPickWeightedSkipsZeroWeightEntries verifies the predicate-based binary search returns the first entry that reaches
+// the draw value, so a zero-weight entry (one sharing the previous entry's cumulative total) is never selected even when
+// it sits between two real entries. The entries carry a name distinct from their cumulative weight so the test can tell
+// which index was actually chosen.
+func TestPickWeightedSkipsZeroWeightEntries(t *testing.T) {
+	c := check.New(t)
+	type entry struct {
+		name string
+		cum  int64
+	}
+	cumOf := func(e entry) int64 { return e.cum }
+	// Per-item weights 2,0,3: the middle "zero" entry has zero weight, so it duplicates the first entry's cumulative
+	// total (2) while remaining a separate index.
+	entries := []entry{{"a", 2}, {"zero", 2}, {"b", 5}}
+	picked := make(map[string]bool)
+	for j := 1; j <= 5; j++ {
+		got, ok := pickWeighted(entries, constRand(j-1), cumOf)
+		c.True(ok)
+		picked[got.name] = true
+	}
+	// Draws 1..2 land on "a", 3..5 on "b"; the zero-weight "zero" entry (index 1) is unreachable.
+	c.Equal(map[string]bool{"a": true, "b": true}, picked)
+}
+
 func TestWeightsSaturateWithoutOverflow(t *testing.T) {
 	c := check.New(t)
 	const maxInt = int(^uint(0) >> 1) // the platform int maximum, far beyond the maxWeight ceiling

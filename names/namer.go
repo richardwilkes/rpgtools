@@ -93,10 +93,13 @@ func pickWeighted[T any](entries []T, rnd xrand.Randomizer, cumulativeOf func(T)
 	// total never exceeds the entry count times the maxWeight ceiling, which stays within int on the 64-bit platforms
 	// this package targets.
 	v := 1 + int64(rnd.Intn(int(total)))
-	for _, entry := range entries {
-		if cumulativeOf(entry) >= v {
-			return entry, true
-		}
+	// The cumulative weights are non-decreasing, so the entry to pick is the first one whose running total reaches v.
+	// Binary search for it rather than scanning every entry: a SimpleNamer or transition key built from many entries
+	// would otherwise pay an O(n) walk on every draw, the same linear-scan trap Date.Year once had.
+	if i, _ := slices.BinarySearchFunc(entries, v, func(e T, target int64) int {
+		return cmp.Compare(cumulativeOf(e), target)
+	}); i < len(entries) {
+		return entries[i], true
 	}
 	return zero, false
 }
