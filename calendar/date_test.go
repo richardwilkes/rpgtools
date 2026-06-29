@@ -215,6 +215,26 @@ func TestFormat(t *testing.T) {
 	c.Equal("Friday, September 22, 1 BC", d.Format("%W, %M %D, %y"))
 }
 
+// TestFormatRepeatedDirectivesConsistent verifies that resolving the date once for the whole layout (instead of once
+// per directive) does not let one directive's transformation leak into another. In particular %y flips the sign of a
+// negative year for a distinct-era display, which must not disturb the signed year a later %z or %Y reads from the same
+// resolved value, and a directive that appears several times must yield the same value each time.
+func TestFormatRepeatedDirectivesConsistent(t *testing.T) {
+	c := check.New(t)
+	cal := calendar.Gregorian() // distinct eras: AD / BC
+	calendar.Default = cal
+
+	d := cal.MustNewDate(9, 22, -1) // year -1
+	// %z is the raw signed year; %y and %Y render the previous era as "1 BC". Each %z must still report -1 even though
+	// it follows a %y that negates its own copy of the year for display.
+	c.Equal("-1|1 BC|-1|1 BC|-1", d.Format("%z|%y|%z|%Y|%z"))
+	// Month and day directives repeated across the layout must each resolve to the same value.
+	c.Equal("September 22 September 22 9 22", d.Format("%M %D %M %D %N %D"))
+
+	d = cal.MustNewDate(9, 22, 2017) // positive year keeps its sign through %y
+	c.Equal("2017|2017 AD|2017", d.Format("%z|%y|%z"))
+}
+
 func TestFormatZeroPadded(t *testing.T) {
 	c := check.New(t)
 	cal := calendar.Gregorian()

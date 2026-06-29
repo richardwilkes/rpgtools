@@ -188,6 +188,17 @@ func (date Date) Format(layout string) string {
 //	%%  %
 func (date Date) WriteFormat(w io.Writer, layout string) {
 	cal := date.calendar()
+	// Resolving the year, month and day-of-month means a binary search for the year plus a walk over the months, so do
+	// it at most once for the whole layout rather than once per directive (FullFormat alone references three of these
+	// fields). The fields are filled lazily on first use, so a layout with no date directives does no date math at all.
+	var year, month, dayInMonth int
+	resolved := false
+	resolve := func() {
+		if !resolved {
+			year, month, dayInMonth, _ = date.resolve()
+			resolved = true
+		}
+	}
 	cmd := false
 	for _, r := range layout {
 		switch {
@@ -199,19 +210,25 @@ func (date Date) WriteFormat(w io.Writer, layout string) {
 			case 'w':
 				fmt.Fprint(w, xstrings.FirstN(date.WeekDayName(), 3))
 			case 'M':
-				fmt.Fprint(w, date.MonthName())
+				resolve()
+				fmt.Fprint(w, cal.Months[month-1].Name)
 			case 'm':
-				fmt.Fprint(w, xstrings.FirstN(date.MonthName(), 3))
+				resolve()
+				fmt.Fprint(w, xstrings.FirstN(cal.Months[month-1].Name, 3))
 			case 'N':
-				fmt.Fprint(w, date.Month())
+				resolve()
+				fmt.Fprint(w, month)
 			case 'n':
-				fmt.Fprintf(w, "%0[1]*[2]d", widthNeeded(len(cal.Months)), date.Month())
+				resolve()
+				fmt.Fprintf(w, "%0[1]*[2]d", widthNeeded(len(cal.Months)), month)
 			case 'D':
-				fmt.Fprint(w, date.DayInMonth())
+				resolve()
+				fmt.Fprint(w, dayInMonth)
 			case 'd':
-				fmt.Fprintf(w, "%0[1]*[2]d", widthNeeded(cal.mostDaysInMonth()), date.DayInMonth())
+				resolve()
+				fmt.Fprintf(w, "%0[1]*[2]d", widthNeeded(cal.mostDaysInMonth()), dayInMonth)
 			case 'Y':
-				year := date.Year()
+				resolve()
 				if cal.PreviousEra != "" {
 					switch {
 					case cal.Era == cal.PreviousEra:
@@ -225,18 +242,26 @@ func (date Date) WriteFormat(w io.Writer, layout string) {
 					fmt.Fprint(w, year)
 				}
 			case 'y':
-				era := date.Era()
-				year := date.Year()
-				if year < 0 && era != "" && cal.Era != cal.PreviousEra {
-					year = -year
+				resolve()
+				// Equivalent to date.Era(): a negative year falls in the previous era, otherwise the current one.
+				era := cal.Era
+				if year < 0 {
+					era = cal.PreviousEra
+				}
+				// Use a copy so flipping the sign for a distinct-era display does not disturb the shared year that
+				// other directives in the same layout read.
+				displayYear := year
+				if displayYear < 0 && era != "" && cal.Era != cal.PreviousEra {
+					displayYear = -displayYear
 				}
 				if era != "" {
-					fmt.Fprintf(w, "%d %s", year, era)
+					fmt.Fprintf(w, "%d %s", displayYear, era)
 				} else {
-					fmt.Fprint(w, year)
+					fmt.Fprint(w, displayYear)
 				}
 			case 'z':
-				fmt.Fprint(w, date.Year())
+				resolve()
+				fmt.Fprint(w, year)
 			case '%':
 				fmt.Fprint(w, "%")
 			}
