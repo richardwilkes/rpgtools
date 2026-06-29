@@ -251,11 +251,14 @@ func widthNeeded(count int) int {
 
 // TextCalendarMonth writes a text representation of the month.
 func (date Date) TextCalendarMonth(w io.Writer) {
+	date.textCalendarMonth(w, widthNeeded(date.calendar().mostDaysInMonth()))
+}
+
+func (date Date) textCalendarMonth(w io.Writer, width int) {
 	cal := date.calendar()
 	year, month, _, maximum := date.resolve()
 	fmt.Fprintf(w, "%d: %s", month, cal.Months[month-1].Name)
 	lastDayOfWeek := len(cal.WeekDays) - 1
-	width := widthNeeded(cal.mostDaysInMonth())
 	for i, weekday := range cal.WeekDays {
 		if i == 0 {
 			fmt.Fprint(w, "\n")

@@ -281,10 +281,11 @@ func (cal *Calendar) IsLeapMonth(month int) bool {
 func (cal *Calendar) Text(year int, w io.Writer) {
 	date := cal.MustNewDate(1, 1, year)
 	date.WriteFormat(w, "Year %Y\n")
+	width := widthNeeded(cal.mostDaysInMonth())
 	maximum := len(cal.Months)
 	for i := 1; i <= maximum; i++ {
 		fmt.Fprintln(w)
-		cal.MustNewDate(i, 1, year).TextCalendarMonth(w)
+		cal.MustNewDate(i, 1, year).textCalendarMonth(w, width)
 	}
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Seasons:")

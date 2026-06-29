@@ -11,6 +11,7 @@ package calendar_test
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 
 	"github.com/richardwilkes/rpgtools/calendar"
@@ -51,6 +52,26 @@ func TestTextCalendarMonthGolden(t *testing.T) {
 		var buf bytes.Buffer
 		one.date.TextCalendarMonth(&buf)
 		c.Equal(one.expected, buf.String(), "table index %d", i)
+	}
+}
+
+func TestTextHoistedWidthMatchesPerMonth(t *testing.T) {
+	c := check.New(t)
+	// Calendar.Text now computes the day-of-month column width once and passes it to every month rather than letting
+	// each month rescan the calendar (which made the loop O(months²)). The hoisted width must equal the width each
+	// month's public TextCalendarMonth computes on its own, so every month block Text emits must appear verbatim in the
+	// full-year output. A wrong hoisted width would change the padding and break this containment.
+	for _, cal := range []*calendar.Calendar{calendar.Gregorian(), pathfinder.AbsalomReckoning()} {
+		const year = 2017
+		var full bytes.Buffer
+		cal.Text(year, &full)
+		out := full.String()
+		for month := 1; month <= len(cal.Months); month++ {
+			var monthBuf bytes.Buffer
+			cal.MustNewDate(month, 1, year).TextCalendarMonth(&monthBuf)
+			c.True(strings.Contains(out, monthBuf.String()),
+				"month %d block must appear verbatim in the full-year text", month)
+		}
 	}
 }
 

@@ -11,7 +11,9 @@ package american
 
 import (
 	_ "embed"
+	"maps"
 	"strings"
+	"sync"
 
 	"github.com/richardwilkes/rpgtools/names/namesets"
 )
@@ -22,9 +24,24 @@ import (
 //go:embed female.txt
 var female string
 
+// The embedded corpora are large, so each is parsed at most once and the parsed map is cached. Callers receive a fresh
+// clone of that map so they retain the prior contract of owning a map they may freely mutate without affecting other
+// callers or the cache.
+var (
+	femaleOnce = sync.OnceValue(func() map[string]int {
+		return namesets.MustLoadFromReader(strings.NewReader(female))
+	})
+	maleOnce = sync.OnceValue(func() map[string]int {
+		return namesets.MustLoadFromReader(strings.NewReader(male))
+	})
+	lastOnce = sync.OnceValue(func() map[string]int {
+		return namesets.MustLoadFromReader(strings.NewReader(last))
+	})
+)
+
 // Female returns a map of American female first names to frequency of occurrence.
 func Female() map[string]int {
-	return namesets.MustLoadFromReader(strings.NewReader(female))
+	return maps.Clone(femaleOnce())
 }
 
 //go:embed male.txt
@@ -32,7 +49,7 @@ var male string
 
 // Male returns a map of American male first names to frequency of occurrence.
 func Male() map[string]int {
-	return namesets.MustLoadFromReader(strings.NewReader(male))
+	return maps.Clone(maleOnce())
 }
 
 //go:embed last.txt
@@ -40,5 +57,5 @@ var last string
 
 // Last returns a map of American last names to frequency of occurrence.
 func Last() map[string]int {
-	return namesets.MustLoadFromReader(strings.NewReader(last))
+	return maps.Clone(lastOnce())
 }
