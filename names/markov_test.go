@@ -49,7 +49,7 @@ func TestMarkovRunLengthWeighting(t *testing.T) {
 	// rather than counting distinct names.
 	n := NewMarkovRunNamer(map[string]int{"oo": 3, "eee": 5}, false, false)
 	c.True(len(n.lengths) > 0)
-	c.Equal(8, n.lengths[len(n.lengths)-1][1])
+	c.Equal(int64(8), n.lengths[len(n.lengths)-1].last)
 }
 
 func TestMarkovReproducibleAcrossBuilds(t *testing.T) {
@@ -111,11 +111,11 @@ func TestMarkovLengthCountsRunes(t *testing.T) {
 
 	letter := NewMarkovLetterNamer(1, map[string]int{name: 1}, false, false)
 	c.Equal(1, len(letter.lengths))
-	c.Equal(5, letter.lengths[0][0], "letter namer length must be counted in runes, not bytes")
+	c.Equal(5, letter.lengths[0].step, "letter namer length must be counted in runes, not bytes")
 
 	run := NewMarkovRunNamer(map[string]int{name: 1}, false, false)
 	c.Equal(1, len(run.lengths))
-	c.Equal(5, run.lengths[0][0], "run namer length must be counted in runes, not bytes")
+	c.Equal(5, run.lengths[0].step, "run namer length must be counted in runes, not bytes")
 }
 
 func TestMarkovGenerationHasHardCap(t *testing.T) {
@@ -132,7 +132,7 @@ func TestMarkovGenerationHasHardCap(t *testing.T) {
 			"b":    {{step: 'a', last: 1}},
 		},
 		final:     map[rune]struct{}{},
-		lengths:   [][2]int{{4, 1}},
+		lengths:   []weightedStep[int]{{step: 4, last: 1}},
 		maxLength: 4,
 	}}
 	c.Equal(8, utf8.RuneCountInString(letter.GenerateName()), "letter namer must stop at the hard cap")
@@ -145,7 +145,7 @@ func TestMarkovGenerationHasHardCap(t *testing.T) {
 			"b": {{step: "a", last: 1}},
 		},
 		final:     map[string]struct{}{},
-		lengths:   [][2]int{{4, 1}},
+		lengths:   []weightedStep[int]{{step: 4, last: 1}},
 		maxLength: 4,
 	}}
 	c.Equal(8, utf8.RuneCountInString(run.GenerateName()), "run namer must stop at the hard cap")

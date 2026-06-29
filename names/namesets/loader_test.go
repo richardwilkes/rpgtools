@@ -81,12 +81,23 @@ func TestLoadFromReaderNameWithComma(t *testing.T) {
 	c.Equal(3, len(m))
 }
 
-func TestLoadFromReaderLargeCountNotTruncated(t *testing.T) {
+func TestLoadFromReaderLargeCountSaturates(t *testing.T) {
 	c := check.New(t)
-	// A count beyond the 32-bit int range must not silently wrap when narrowed to int on a 32-bit build; it
-	// saturates to the platform maximum instead. On a 64-bit build it is preserved exactly. Either way the stored
-	// value stays large and positive rather than wrapping to a small or negative number.
+	// A count beyond the int32 range saturates to math.MaxInt32 (the weight ceiling the namer constructors apply)
+	// rather than being preserved at full width or, on a narrow int, wrapping to a small or negative value.
 	m, err := LoadFromReader(strings.NewReader("Big, 3000000000"))
 	c.NoError(err)
-	c.True(m["Big"] >= math.MaxInt32, "large count must not wrap to a smaller or negative value")
+	c.Equal(math.MaxInt32, m["Big"])
+}
+
+func TestLoadFromReaderLargeCountsSaturateAcrossLines(t *testing.T) {
+	c := check.New(t)
+	// Two counts at the int64 maximum for the same name must saturate at math.MaxInt32, not wrap a platform int
+	// negative. A wrapped negative total would trip the "< 1" suppression filter and delete the name entirely, so the
+	// name must both survive and hold the saturated weight.
+	m, err := LoadFromReader(strings.NewReader("Big, 9223372036854775807\nBig, 9223372036854775807"))
+	c.NoError(err)
+	_, ok := m["Big"]
+	c.True(ok, "a name with huge counts must survive, not be deleted by an overflow wrap")
+	c.Equal(math.MaxInt32, m["Big"])
 }

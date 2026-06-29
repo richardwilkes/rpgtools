@@ -12,8 +12,6 @@ package names
 import (
 	"cmp"
 	"iter"
-	"maps"
-	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -24,7 +22,7 @@ import (
 // own), which is the form pickWeighted consumes; the last entry for a key therefore holds that key's grand total.
 type weightedStep[S cmp.Ordered] struct {
 	step S
-	last int
+	last int64
 }
 
 // markovStepper supplies the per-step behavior that distinguishes the Markov namers: how a training name is broken into
@@ -49,7 +47,7 @@ type markov[S cmp.Ordered] struct {
 	stepper      markovStepper[S]
 	mapping      map[string][]weightedStep[S]
 	final        map[S]struct{}
-	lengths      [][2]int
+	lengths      []weightedStep[int]
 	maxLength    int
 	lowered      bool
 	firstToUpper bool
@@ -72,7 +70,7 @@ func newMarkov[S cmp.Ordered](stepper markovStepper[S], data iter.Seq2[string, i
 		}
 	}
 	n.lengths, n.maxLength = computeLengths(lengths)
-	n.mapping = cumulativePairs(mapping, func(step S, cumulative int) weightedStep[S] {
+	n.mapping = cumulativePairs(mapping, func(step S, cumulative int64) weightedStep[S] {
 		return weightedStep[S]{step: step, last: cumulative}
 	})
 	return n
@@ -90,11 +88,12 @@ func (n *markov[S]) add(name string, count int, mapping map[string]map[S]int, le
 			m = make(map[S]int)
 			mapping[key] = m
 		}
-		m[step] += count
+		m[step] = addWeight(m[step], count)
 		key = n.stepper.advance(key, step)
 	}
 	n.final[steps[len(steps)-1]] = struct{}{}
-	lengths[utf8.RuneCountInString(name)] += count
+	nameLen := utf8.RuneCountInString(name)
+	lengths[nameLen] = addWeight(lengths[nameLen], count)
 }
 
 // GenerateName generates a new random name.
@@ -117,7 +116,7 @@ func (n *markov[S]) GenerateNameWithRandomizer(rnd xrand.Randomizer) string {
 		if !ok {
 			break
 		}
-		picked, ok := pickWeighted(choices, rnd, func(ws weightedStep[S]) int { return ws.last })
+		picked, ok := pickWeighted(choices, rnd, func(ws weightedStep[S]) int64 { return ws.last })
 		if !ok {
 			break
 		}
@@ -136,22 +135,21 @@ func (n *markov[S]) GenerateNameWithRandomizer(rnd xrand.Randomizer) string {
 	return applyCase(buffer.String(), n.lowered, n.firstToUpper)
 }
 
-func computeLengths(lengths map[int]int) (result [][2]int, maxLength int) {
-	result = make([][2]int, 0, len(lengths))
-	total := 0
-	// Accumulate in sorted length order so that a given seeded randomizer reproduces the same length selection across
-	// process runs rather than depending on Go's randomized map iteration order.
-	for _, length := range slices.Sorted(maps.Keys(lengths)) {
-		total += lengths[length]
-		result = append(result, [2]int{length, total})
-		maxLength = max(maxLength, length)
+func computeLengths(lengths map[int]int) (result []weightedStep[int], maxLength int) {
+	// Reuse the shared cumulative-weight builder (which accumulates in int64 and in sorted key order, so a seeded
+	// randomizer reproduces the same length selection across process runs) rather than duplicating that arithmetic.
+	result = cumulativeWeights(lengths, func(length int, cumulative int64) weightedStep[int] {
+		return weightedStep[int]{step: length, last: cumulative}
+	})
+	if n := len(result); n != 0 {
+		maxLength = result[n-1].step // keys accumulate in ascending order, so the last entry holds the longest length
 	}
 	return result, maxLength
 }
 
-func selectMax(lengths [][2]int, rnd xrand.Randomizer) int {
-	if p, ok := pickWeighted(lengths, rnd, func(p [2]int) int { return p[1] }); ok {
-		return p[0]
+func selectMax(lengths []weightedStep[int], rnd xrand.Randomizer) int {
+	if p, ok := pickWeighted(lengths, rnd, func(ws weightedStep[int]) int64 { return ws.last }); ok {
+		return p.step
 	}
 	return 0
 }

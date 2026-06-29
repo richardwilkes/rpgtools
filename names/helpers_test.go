@@ -57,7 +57,7 @@ func TestApplyCase(t *testing.T) {
 
 func TestPickWeighted(t *testing.T) {
 	c := check.New(t)
-	id := func(v int) int { return v }
+	id := func(v int) int64 { return int64(v) }
 	// Cumulative weights [1,3,6] (per-item 1,2,3; total 6). 'v' ranges over 1..6.
 	entries := []int{1, 3, 6}
 
@@ -79,6 +79,26 @@ func TestPickWeighted(t *testing.T) {
 	c.False(ok)
 }
 
+func TestWeightsSaturateWithoutOverflow(t *testing.T) {
+	c := check.New(t)
+	const maxInt = int(^uint(0) >> 1) // the platform int maximum, far beyond the maxWeight ceiling
+
+	// SimpleNamer: each per-name weight saturates at maxWeight, and the grand cumulative total is their int64 sum
+	// (positive and well within int64 range). Before this, summing two int-max weights overflowed to a negative total,
+	// which made pickWeighted give up and return "" for entirely valid data.
+	simple := NewSimpleNamer(map[string]int{"aaa": maxInt, "bbb": maxInt}, false, false)
+	c.Equal(int64(maxWeight), simple.data[0].cumulative)                    // first name's own weight, capped
+	c.Equal(int64(maxWeight)*2, simple.data[len(simple.data)-1].cumulative) // grand total, summed as int64
+	c.True(simple.GenerateNameWithRandomizer(constRand(0)) != "", "valid data must still produce a name")
+
+	// MarkovLetterNamer: a transition weight built from an enormous count saturates the same way, and the int64
+	// cumulative total stays positive so the chain still generates.
+	letter := NewMarkovLetterNamer(1, map[string]int{"a": maxInt, "b": maxInt}, false, false)
+	steps := letter.mapping[letter.stepper.initialKey()]
+	c.Equal(int64(maxWeight)*2, steps[len(steps)-1].last)
+	c.True(letter.GenerateNameWithRandomizer(constRand(0)) != "", "valid data must still produce a name")
+}
+
 //nolint:goconst // The tests are more readable without constants for duplicated string
 func TestUnweightedConstructorsCountDuplicates(t *testing.T) {
 	c := check.New(t)
@@ -86,23 +106,23 @@ func TestUnweightedConstructorsCountDuplicates(t *testing.T) {
 	// entry, which is what a naive []string -> map adapter would do.
 	simple := NewSimpleUnweightedNamer([]string{"alice", "alice", "bob"}, false, false)
 	// The last entry's cumulative weight is the grand total: 1 each for the two alices and bob.
-	c.Equal(3, simple.data[len(simple.data)-1].cumulative)
+	c.Equal(int64(3), simple.data[len(simple.data)-1].cumulative)
 	// Each entry's own weight is its cumulative minus the previous one; the two "alice" occurrences sum to 2 rather
 	// than collapsing to a single entry of weight 1.
-	aliceCount := 0
-	prev := 0
+	aliceCount := int64(0)
+	prev := int64(0)
 	for _, nc := range simple.data {
 		if nc.name == "alice" {
 			aliceCount += nc.cumulative - prev
 		}
 		prev = nc.cumulative
 	}
-	c.Equal(2, aliceCount)
+	c.Equal(int64(2), aliceCount)
 
 	// The Markov length distribution must likewise accumulate the duplicate: two 2-rune names give a cumulative
 	// count of 2 for length 2.
 	letter := NewMarkovLetterUnweightedNamer(1, []string{"ab", "ab"}, false, false)
-	c.Equal([][2]int{{2, 2}}, letter.lengths)
+	c.Equal([]weightedStep[int]{{step: 2, last: 2}}, letter.lengths)
 	run := NewMarkovRunUnweightedNamer([]string{"ab", "ab"}, false, false)
-	c.Equal([][2]int{{2, 2}}, run.lengths)
+	c.Equal([]weightedStep[int]{{step: 2, last: 2}}, run.lengths)
 }

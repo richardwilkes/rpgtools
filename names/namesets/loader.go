@@ -49,9 +49,11 @@ func LoadFromReader(r io.Reader) (map[string]int, error) {
 		if parsed, err := strconv.ParseInt(strings.TrimSpace(countText), 10, 64); err == nil {
 			count = parsed
 		}
-		// Clamp to the platform int range before narrowing so a count beyond it (possible on a 32-bit build)
-		// saturates rather than silently wrapping to an unrelated value.
-		m[name] += int(min(max(count, math.MinInt), math.MaxInt))
+		// Accumulate in int64 and saturate the per-name total at the int32 range. Without this, two very large counts
+		// for the same name could wrap a platform int negative, and the "< 1" filter below would then delete the name
+		// entirely. The math.MaxInt32 ceiling matches the weight cap the namer constructors apply, while a net total
+		// below 1 is left as-is so it still suppresses the name.
+		m[name] = saturatingAddInt32(m[name], count)
 	}
 	// Drop names whose accumulated count is less than 1 so the returned set never contains a name that was suppressed
 	// with a count of 0 (or one whose positive and negative counts canceled out).
@@ -61,4 +63,14 @@ func LoadFromReader(r io.Reader) (map[string]int, error) {
 		}
 	}
 	return m, errs.Wrap(scanner.Err())
+}
+
+// saturatingAddInt32 returns sum + delta with both the addend and the running total clamped to the int32 range, so a
+// pathologically large or repeated count can neither wrap a platform int nor exceed the math.MaxInt32 weight ceiling
+// the namers use. A net total below 1 is left negative or zero so the caller's suppression filter still removes the
+// name.
+func saturatingAddInt32(sum int, delta int64) int {
+	delta = min(max(delta, math.MinInt32), math.MaxInt32)
+	total := min(max(int64(sum)+delta, math.MinInt32), math.MaxInt32)
+	return int(total)
 }
