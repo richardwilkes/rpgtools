@@ -21,7 +21,8 @@ import (
 )
 
 // MustLoadFromReader loads a name set from the provided reader. The data should consist of lines of text, each of which
-// contains a name and a count, separated by a comma.
+// contains a name and a count, separated by a comma. As with LoadFromReader, a single line longer than roughly 64KB is
+// rejected; here that error terminates the process, so this is intended for known-good data such as an embedded corpus.
 func MustLoadFromReader(r io.Reader) map[string]int {
 	m, err := LoadFromReader(r)
 	xos.ExitIfErr(err)
@@ -32,6 +33,10 @@ func MustLoadFromReader(r io.Reader) map[string]int {
 // contains a name and a count, separated by a comma. The trailing comma and count may be omitted, or the count may be
 // unparseable, in which case a value of 1 is assumed. An explicit count of less than 1 removes the name from the
 // returned set (matching the namer constructors), so a data author can suppress a name by giving it a count of 0.
+//
+// Lines are read with the default bufio.Scanner buffer, so a single line longer than roughly 64KB is not split or
+// truncated: the scan stops at that line and a non-nil error is returned along with the names accumulated so far. A
+// well-formed name set, with one short name per line, never approaches this limit.
 func LoadFromReader(r io.Reader) (map[string]int, error) {
 	m := make(map[string]int)
 	scanner := bufio.NewScanner(r)
