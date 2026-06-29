@@ -45,6 +45,7 @@ func (date Date) calendar() *Calendar {
 // Year returns the year of the date.
 func (date Date) Year() int {
 	cal := date.calendar()
+	cal.mustBeUsable() // the binary search below divides by minDays, so reject an unusable calendar with a clear error
 	minDays := cal.MinDaysPerYear()
 	// Binary search for the largest year whose first day falls on or before this date. yearToDaysWith is monotonic in
 	// the year, so this converges in O(log) steps; the previous code corrected an approximate year one step at a time,
@@ -121,6 +122,7 @@ func (date Date) DaysInMonth() int {
 // WeekDay returns the weekday of the date.
 func (date Date) WeekDay() int {
 	cal := date.calendar()
+	cal.mustBeUsable() // the modulo below divides by len(WeekDays), so reject an unusable calendar with a clear error
 	weekday := date.Days % len(cal.WeekDays)
 	if date.Days < 0 {
 		weekday += len(cal.WeekDays)

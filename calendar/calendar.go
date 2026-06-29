@@ -94,6 +94,17 @@ func (cal *Calendar) checkUsable() error {
 	return nil
 }
 
+// mustBeUsable panics with the error checkUsable reports when the calendar cannot support date math. The constructors
+// reject an unusable calendar up front, but a zero-value Date (or one produced by UnmarshalText) resolves through
+// Default, which a caller can reassign to a deserialized, never-validated calendar. The Date accessors call this before
+// they divide by the days-per-year or the week-day count, turning what would otherwise be an opaque "integer divide by
+// zero" panic deep inside an accessor into the same actionable error the constructors already give.
+func (cal *Calendar) mustBeUsable() {
+	if err := cal.checkUsable(); err != nil {
+		panic(err) // @allow
+	}
+}
+
 // MustNewDate creates a new date from the specified month, day and year. Panics if the values are invalid.
 func (cal *Calendar) MustNewDate(month, day, year int) Date {
 	date, err := cal.NewDate(month, day, year)

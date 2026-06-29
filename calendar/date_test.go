@@ -612,6 +612,57 @@ func TestValidCalendarIsUsableForDateMath(t *testing.T) {
 	}
 }
 
+// TestUnusableDefaultPanicsClearly verifies that when Default is reassigned to a calendar that never passed validation
+// (the realistic path for a deserialized calendar), a Date resolving through it reports the same actionable
+// "unusable calendar" error the constructors give rather than an opaque "integer divide by zero". The constructors
+// already guard their own path (TestInvalidCalendarRejected); this covers the Default-fallback access path.
+func TestUnusableDefaultPanicsClearly(t *testing.T) {
+	c := check.New(t)
+	defer func() { calendar.Default = calendar.Gregorian() }() // leave a usable Default for the other tests
+
+	// recoverMessage runs fn, recovering any panic, and reports whether it panicked along with the recovered error's
+	// message (empty when the recovered value was not an error, as an opaque runtime divide-by-zero would be).
+	recoverMessage := func(fn func()) (msg string, panicked bool) {
+		defer func() {
+			if r := recover(); r != nil {
+				panicked = true
+				if err, ok := r.(error); ok {
+					msg = err.Error()
+				}
+			}
+		}()
+		fn()
+		return
+	}
+
+	// A calendar with no week days and no months never passed checkUsable; every accessor must surface its error rather
+	// than dividing by zero.
+	calendar.Default = &calendar.Calendar{}
+	var date calendar.Date
+	for _, tc := range []struct {
+		name string
+		fn   func()
+	}{
+		{"Year", func() { _ = date.Year() }},
+		{"WeekDay", func() { _ = date.WeekDay() }},
+		{"Month", func() { _ = date.Month() }},
+		{"WeekDayName", func() { _ = date.WeekDayName() }},
+		{"String", func() { _ = date.String() }},
+	} {
+		msg, panicked := recoverMessage(tc.fn)
+		c.True(panicked, "%s must panic on an unusable Default", tc.name)
+		c.True(strings.Contains(msg, "week day"),
+			"%s must report the clear unusable-calendar error, got %q", tc.name, msg)
+	}
+
+	// A calendar with week days but no months is the specific case Year() would divide by zero on; the error must name
+	// the missing months instead of crashing opaquely.
+	calendar.Default = &calendar.Calendar{WeekDays: []string{"A", "B"}}
+	msg, panicked := recoverMessage(func() { _ = date.Year() })
+	c.True(panicked, "Year must panic when the calendar has no months")
+	c.True(strings.Contains(msg, "month"), "Year must name the missing months, got %q", msg)
+}
+
 func TestUnmarshaling(t *testing.T) {
 	c := check.New(t)
 	cal := calendar.Gregorian()
