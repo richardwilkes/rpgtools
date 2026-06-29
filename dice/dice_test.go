@@ -447,6 +447,14 @@ func TestExtractFirstPosition(t *testing.T) {
 		// drops the operand), so the span excludes the unparsed tail rather than over-reporting it.
 		{"3d6+ 2", 0, 3}, // 40
 		{"d6- 5", 0, 2},  // 41
+		// A sign immediately followed by a multiplier has no operand of its own, so it is dangling: New drops the sign
+		// and keeps the multiplier ("d6+x2" parses to "d6x2"). A contiguous span cannot reproduce that, so the spec
+		// ends at the dangling sign and the trim drops it, yielding just the dice (never an interior dangling sign).
+		{"d6+x2", 0, 2},  // 42
+		{"d6-x2", 0, 2},  // 43
+		{"3d6+x5", 0, 3}, // 44
+		{"5+x2", 0, 1},   // 45
+		{"d6+X2", 0, 2},  // 46 - uppercase multiplier
 	} {
 		desc := fmt.Sprintf("Table index %d: %s", i, one.Text)
 		start, end := dice.ExtractDicePosition(one.Text)
@@ -466,6 +474,8 @@ func TestExtractedSpanIsCanonical(t *testing.T) {
 	for _, text := range []string{
 		"3d6+ 2", "d6- 5", "5 ", "roll 5 ", "13 ", "5 5", "d6+", "3d6x", "2d6+2x", "d6+x", "roll 3d6 for me", "d6x2",
 		"5", "roll 5", "d6", "2d6+2",
+		// A sign directly before a multiplier is dangling; the span must still be exactly what New parses it back into.
+		"d6+x2", "d6-x2", "3d6+x5", "5+x2", "d6+X2",
 	} {
 		start, end := dice.ExtractDicePosition(text)
 		c.True(start >= 0 && start < end, text)

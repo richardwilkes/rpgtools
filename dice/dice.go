@@ -128,10 +128,11 @@ func extractValue(in string, inPos int) (value, outPos int) {
 func ExtractDicePosition(text string) (start, end int) {
 	start = -1
 	state := 0
-	foundDigit := false // The current candidate contains at least one digit (a count or a number of sides).
-	hasD := false       // The current candidate contains a 'd'.
-	droppedD := false   // A standalone (non-word) 'd' was discarded because no digit followed it.
-	dInWord := false    // The 'd' starting the current candidate is adjacent to a prose letter, so it is part of a word.
+	foundDigit := false   // The current candidate contains at least one digit (a count or a number of sides).
+	hasD := false         // The current candidate contains a 'd'.
+	droppedD := false     // A standalone (non-word) 'd' was discarded because no digit followed it.
+	dInWord := false      // The 'd' starting the current candidate is adjacent to a prose letter, so it is part of a word.
+	signHasDigit := false // A digit has followed the latest sign, so the sign has an operand and is not dangling.
 	maximum := len(text)
 	var prev rune
 	for i, ch := range text {
@@ -163,6 +164,7 @@ func ExtractDicePosition(text string) (start, end int) {
 				dInWord = isProseLetter(prev)
 				state = 1
 			case isSign(ch):
+				signHasDigit = false
 				state = 2
 			case ch == ' ' && start != -1:
 				// A space after a bare number may just be trailing whitespace; defer judging it until we learn whether
@@ -188,19 +190,24 @@ func ExtractDicePosition(text string) (start, end int) {
 				hasD = false
 				state = 0
 			case isSign(ch):
+				signHasDigit = false
 				state = 2
 			case isMultiplier(ch):
 				state = 3
 			default:
 				state = 4
 			}
-		case 2: // Found a sign; allow digits or 'x'. A space ends the spec, just as it does in New.
-			if !isDigit(ch) {
-				if isMultiplier(ch) {
-					state = 3
-				} else {
-					state = 4
-				}
+		case 2: // Found a sign; take its digit operand, then a multiplier if present, as New does.
+			switch {
+			case isDigit(ch):
+				signHasDigit = true
+			case isMultiplier(ch) && signHasDigit:
+				state = 3
+			default:
+				// A sign with no digit operand is dangling: New reads an empty operand and drops the sign, so it
+				// cannot carry a following multiplier into the spec. End the spec here so the trailing-operator trim
+				// drops the dangling sign, keeping the span canonical (e.g. "d6+x2" yields "d6").
+				state = 4
 			}
 		case 3: // Found an 'x'; allow digits. A space ends the spec, just as it does in New.
 			if !isDigit(ch) {
