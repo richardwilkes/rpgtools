@@ -83,8 +83,8 @@ func (cal *Calendar) checkUsable() error {
 	if cal.DayZeroWeekDay < 0 || cal.DayZeroWeekDay >= len(cal.WeekDays) {
 		return errs.New("Calendar's first week day of the first year must be a valid week day")
 	}
-	if cal.MinDaysPerYear() < 1 {
-		return errs.New("Calendar must have at least one month with at least one day")
+	if cal.MinDaysPerYear() < 2 {
+		return errs.New("Calendar must have at least one month and a total of at least two days")
 	}
 	if cal.LeapYear != nil {
 		if err := cal.LeapYear.Valid(cal); err != nil {
