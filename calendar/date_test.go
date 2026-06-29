@@ -85,6 +85,26 @@ func TestYear(t *testing.T) {
 	}
 }
 
+// TestYearLargeDays guards against a regression to the old O(date.Days) convergence loop in Year(), which made a Date
+// carrying a very large (but legal) Days value effectively hang. The binary search returns in O(log) steps, so these
+// calls complete near-instantly; under the old loop the 1<<62 cases alone would have run for trillions of iterations.
+// Each result is cross-checked against the calendar's own first-day-of-year boundaries: the reported year must start on
+// or before the date and the following year must start strictly after it.
+func TestYearLargeDays(t *testing.T) {
+	c := check.New(t)
+	cal := calendar.Gregorian()
+	for _, days := range []int{1 << 40, 1 << 50, 1 << 62, -(1 << 40), -(1 << 50), -(1 << 62)} {
+		year := cal.NewDateByDays(days).Year()
+		c.True(year != 0, "year is never 0 (days=%d)", days)
+		c.True(cal.MustNewDate(1, 1, year).Days <= days, "1/1/%d must start on or before days=%d", year, days)
+		next := year + 1
+		if next == 0 { // skip the nonexistent year 0 when stepping forward from year -1
+			next = 1
+		}
+		c.True(days < cal.MustNewDate(1, 1, next).Days, "1/1/%d must start after days=%d", next, days)
+	}
+}
+
 func TestDayInYear(t *testing.T) {
 	c := check.New(t)
 	cal := calendar.Gregorian()

@@ -46,19 +46,26 @@ func (date Date) calendar() *Calendar {
 func (date Date) Year() int {
 	cal := date.calendar()
 	minDays := cal.MinDaysPerYear()
-	estimate := date.Days / minDays
+	// Binary search for the largest year whose first day falls on or before this date. yearToDaysWith is monotonic in
+	// the year, so this converges in O(log) steps; the previous code corrected an approximate year one step at a time,
+	// which was O(date.Days) and effectively hung for very large day counts (date.Days is an unbounded public field).
+	// Year 0 does not exist, so a non-negative date is searched among years >= 1 and a negative date among years <= -1,
+	// keeping the search clear of the gap. The bounds rely on every year being at least minDays long, so that
+	// yearToDays(year) >= (year-1)*minDays for a positive year and yearToDays(year) <= year*minDays for a negative one:
+	// hi is then past the answer and lo is at or before it.
+	lo, hi := 1, date.Days/minDays+2
 	if date.Days < 0 {
-		estimate--
-		for date.Days >= cal.yearToDaysWith(estimate+1, minDays) {
-			estimate++
-		}
-	} else {
-		estimate++
-		for date.Days < cal.yearToDaysWith(estimate, minDays) {
-			estimate--
+		lo, hi = date.Days/minDays-2, -1
+	}
+	for lo < hi {
+		mid := lo + (hi-lo+1)/2 // bias toward hi so lo still advances when only one candidate separates them
+		if cal.yearToDaysWith(mid, minDays) <= date.Days {
+			lo = mid
+		} else {
+			hi = mid - 1
 		}
 	}
-	return estimate
+	return lo
 }
 
 // resolve returns the year, month (1-based), day within the month (1-based), and the number of days in that month from
