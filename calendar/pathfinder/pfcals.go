@@ -19,24 +19,24 @@ const (
 
 // AbsalomReckoning returns a new Pathfinder RPG Absalom Reckoning calendar.
 func AbsalomReckoning() *calendar.Calendar {
-	return &calendar.Calendar{
-		WeekDays:    newWeekdays(),
-		Months:      newMonths(),
-		Seasons:     newSeasons(),
-		Era:         AbsalomReckoningEra,
-		PreviousEra: AbsalomReckoningEra,
-		LeapYear:    newLeapYear(),
-	}
+	return newPathfinderCalendar(AbsalomReckoningEra)
 }
 
 // ImperialCalendar returns a new Pathfinder RPG Imperial Calendar.
 func ImperialCalendar() *calendar.Calendar {
+	return newPathfinderCalendar(ImperialCalendarEra)
+}
+
+// newPathfinderCalendar builds the shared Pathfinder calendar structure, which differs between the variants only in the
+// era name (the same name serves as both the current and previous era). Each call returns an independent Calendar built
+// from fresh component slices.
+func newPathfinderCalendar(era string) *calendar.Calendar {
 	return &calendar.Calendar{
 		WeekDays:    newWeekdays(),
 		Months:      newMonths(),
 		Seasons:     newSeasons(),
-		Era:         ImperialCalendarEra,
-		PreviousEra: ImperialCalendarEra,
+		Era:         era,
+		PreviousEra: era,
 		LeapYear:    newLeapYear(),
 	}
 }
