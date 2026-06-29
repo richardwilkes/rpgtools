@@ -12,6 +12,7 @@ package namesets
 import (
 	"bufio"
 	"io"
+	"math"
 	"strconv"
 	"strings"
 
@@ -36,20 +37,21 @@ func LoadFromReader(r io.Reader) (map[string]int, error) {
 	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
 		line := scanner.Text()
-		parts := strings.Split(line, ",")
-		if parts[0] = strings.TrimSpace(parts[0]); parts[0] == "" {
+		name := line
+		countText := ""
+		if idx := strings.LastIndex(line, ","); idx >= 0 {
+			name, countText = line[:idx], line[idx+1:]
+		}
+		if name = strings.TrimSpace(name); name == "" {
 			continue
 		}
 		count := int64(1)
-		if len(parts) > 1 {
-			// Honor an explicit count exactly, including a value less than 1: per the namer constructors such a
-			// count removes the name from the set, so a data author can suppress a name with a count of 0. Only a
-			// malformed (unparseable) count falls back to the default of 1.
-			if parsed, err := strconv.ParseInt(strings.TrimSpace(parts[1]), 10, 64); err == nil {
-				count = parsed
-			}
+		if parsed, err := strconv.ParseInt(strings.TrimSpace(countText), 10, 64); err == nil {
+			count = parsed
 		}
-		m[parts[0]] += int(count)
+		// Clamp to the platform int range before narrowing so a count beyond it (possible on a 32-bit build)
+		// saturates rather than silently wrapping to an unrelated value.
+		m[name] += int(min(max(count, math.MinInt), math.MaxInt))
 	}
 	// Drop names whose accumulated count is less than 1 so the returned set never contains a name that was suppressed
 	// with a count of 0 (or one whose positive and negative counts canceled out).

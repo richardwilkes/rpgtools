@@ -10,6 +10,7 @@
 package namesets
 
 import (
+	"math"
 	"strings"
 	"testing"
 
@@ -62,4 +63,30 @@ func TestLoadFromReaderSuppressesNonPositiveCounts(t *testing.T) {
 	_, ok = m["Canceled"]
 	c.False(ok, "a name whose counts cancel to 0 must be removed")
 	c.Equal(2, len(m)) // only Keep and Survivor remain
+}
+
+func TestLoadFromReaderNameWithComma(t *testing.T) {
+	c := check.New(t)
+	// Only the final comma separates the name from the count, so a name that itself contains commas is kept intact
+	// rather than being truncated at its first comma.
+	m, err := LoadFromReader(strings.NewReader(strings.Join([]string{
+		"Smith, Jr., 5",      // name "Smith, Jr." with count 5
+		"de la Cruz, Sr., 3", // name with two internal commas and a count
+		"Bob, 2",             // ordinary name with a count
+	}, "\n")))
+	c.NoError(err)
+	c.Equal(5, m["Smith, Jr."])
+	c.Equal(3, m["de la Cruz, Sr."])
+	c.Equal(2, m["Bob"])
+	c.Equal(3, len(m))
+}
+
+func TestLoadFromReaderLargeCountNotTruncated(t *testing.T) {
+	c := check.New(t)
+	// A count beyond the 32-bit int range must not silently wrap when narrowed to int on a 32-bit build; it
+	// saturates to the platform maximum instead. On a 64-bit build it is preserved exactly. Either way the stored
+	// value stays large and positive rather than wrapping to a small or negative number.
+	m, err := LoadFromReader(strings.NewReader("Big, 3000000000"))
+	c.NoError(err)
+	c.True(m["Big"] >= math.MaxInt32, "large count must not wrap to a smaller or negative value")
 }
