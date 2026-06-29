@@ -55,6 +55,23 @@ func TestTextCalendarMonthGolden(t *testing.T) {
 	}
 }
 
+func TestTextCalendarMonthSpacing(t *testing.T) {
+	c := check.New(t)
+	// A two-digit-wide month (12 days) whose first day lands three columns in (day-zero week day 1) exercises both
+	// padding paths: the week-day legend pads each abbreviation to the column width, and the first week is indented by
+	// weekDay*(width+1). Pinning the exact bytes guards the strings.Repeat-based padding against off-by-one drift.
+	cal := &calendar.Calendar{
+		DayZeroWeekDay: 1,
+		WeekDays:       []string{"Aardvark", "Bee", "Cat"},
+		Months:         []calendar.Month{{Name: "M", Days: 12}},
+		Seasons:        []calendar.Season{{Name: "Whole", StartMonth: 1, StartDay: 1, EndMonth: 1, EndDay: 12}},
+	}
+	c.NoError(cal.Valid())
+	var buf bytes.Buffer
+	cal.MustNewDate(1, 1, 1).TextCalendarMonth(&buf)
+	c.Equal("1: M\n A  B  C\n    1  2\n 3  4  5\n 6  7  8\n 9 10 11\n12 \n", buf.String())
+}
+
 func TestTextHoistedWidthMatchesPerMonth(t *testing.T) {
 	c := check.New(t)
 	// Calendar.Text now computes the day-of-month column width once and passes it to every month rather than letting

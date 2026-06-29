@@ -39,13 +39,13 @@ func (season *Season) Valid(cal *Calendar) error {
 	if season.StartMonth < 1 || season.StartMonth > len(cal.Months) {
 		return errs.New("Calendar seasons must start in a valid month")
 	}
-	if season.StartDay < 1 || season.StartDay > cal.Months[season.StartMonth-1].Days {
+	if season.StartDay < 1 || season.StartDay > cal.maxDaysInMonth(season.StartMonth) {
 		return errs.New("Calendar seasons must start in a valid day within the month")
 	}
 	if season.EndMonth < 1 || season.EndMonth > len(cal.Months) {
 		return errs.New("Calendar seasons must end in a valid month")
 	}
-	if season.EndDay < 1 || season.EndDay > cal.Months[season.EndMonth-1].Days {
+	if season.EndDay < 1 || season.EndDay > cal.maxDaysInMonth(season.EndMonth) {
 		return errs.New("Calendar seasons must end in a valid day within the month")
 	}
 	return nil

@@ -12,6 +12,7 @@ package calendar
 import (
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 
 	"github.com/richardwilkes/toolbox/v2/xstrings"
@@ -240,13 +241,10 @@ func (date Date) WriteFormat(w io.Writer, layout string) {
 	}
 }
 
+// widthNeeded returns the number of characters needed to print count in base 10. Every caller passes a non-negative
+// month or day-of-month count, for which this is simply the number of decimal digits.
 func widthNeeded(count int) int {
-	needed := 1
-	for count > 9 {
-		count /= 10
-		needed++
-	}
-	return needed
+	return len(strconv.Itoa(count))
 }
 
 // TextCalendarMonth writes a text representation of the month.
@@ -265,9 +263,7 @@ func (date Date) textCalendarMonth(w io.Writer, width int) {
 		} else {
 			fmt.Fprint(w, " ")
 		}
-		for j := 0; j < width-1; j++ {
-			fmt.Fprint(w, " ")
-		}
+		fmt.Fprint(w, strings.Repeat(" ", width-1))
 		fmt.Fprint(w, xstrings.FirstN(weekday, 1))
 	}
 	// Consecutive days differ only by one in Days, so derive the first day once and increment rather than rebuilding a
@@ -280,9 +276,7 @@ func (date Date) textCalendarMonth(w io.Writer, width int) {
 			fmt.Fprint(w, "\n")
 		}
 		if i == 1 && weekDay != 0 {
-			for j := 0; j < weekDay*(width+1); j++ {
-				fmt.Fprint(w, " ")
-			}
+			fmt.Fprint(w, strings.Repeat(" ", weekDay*(width+1)))
 		}
 		fmt.Fprintf(w, numFmt, i)
 		if weekDay != lastDayOfWeek {
