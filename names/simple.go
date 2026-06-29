@@ -21,15 +21,16 @@ import (
 
 var _ Namer = &SimpleNamer{}
 
+// nameCount pairs a name with the running cumulative weight through it (the prior entries' weights plus its own), which
+// is the form pickWeighted consumes; the last entry's value is therefore the grand total.
 type nameCount struct {
-	name  string
-	count int
+	name       string
+	cumulative int
 }
 
 // SimpleNamer provides a name generator that selects a name from the weighted set of names provided to it.
 type SimpleNamer struct {
 	data         []nameCount
-	total        int
 	lowered      bool
 	firstToUpper bool
 }
@@ -57,12 +58,19 @@ func newSimpleNamer(data iter.Seq2[string, int], lowered, firstToUpper bool) *Si
 	for name, count := range data {
 		if count > 0 {
 			if name = strings.TrimSpace(name); name != "" {
-				n.data = append(n.data, nameCount{name: name, count: count})
-				n.total += count
+				// cumulative temporarily holds this entry's own weight; it is folded into a running total below.
+				n.data = append(n.data, nameCount{name: name, cumulative: count})
 			}
 		}
 	}
+	// Sort by name so a seeded randomizer reproduces the same selections across runs, then convert each entry's weight
+	// into the running cumulative total that pickWeighted expects.
 	slices.SortFunc(n.data, func(a, b nameCount) int { return xstrings.NaturalCmp(a.name, b.name, false) })
+	total := 0
+	for i := range n.data {
+		total += n.data[i].cumulative
+		n.data[i].cumulative = total
+	}
 	return &n
 }
 
@@ -73,15 +81,8 @@ func (n *SimpleNamer) GenerateName() string {
 
 // GenerateNameWithRandomizer generates a new random name using the specified randomizer.
 func (n *SimpleNamer) GenerateNameWithRandomizer(rnd xrand.Randomizer) string {
-	if len(n.data) == 0 {
-		return ""
+	if e, ok := pickWeighted(n.data, rnd, func(e nameCount) int { return e.cumulative }); ok {
+		return applyCase(e.name, n.lowered, n.firstToUpper)
 	}
-	v := 1 + rnd.Intn(n.total)
-	for i := range n.data {
-		if v -= n.data[i].count; v < 1 {
-			return applyCase(n.data[i].name, n.lowered, n.firstToUpper)
-		}
-	}
-	// Should not be reachable
-	return applyCase(n.data[0].name, n.lowered, n.firstToUpper)
+	return ""
 }

@@ -85,12 +85,17 @@ func TestUnweightedConstructorsCountDuplicates(t *testing.T) {
 	// A name repeated in an unweighted slice must count once per occurrence rather than being collapsed to a single
 	// entry, which is what a naive []string -> map adapter would do.
 	simple := NewSimpleUnweightedNamer([]string{"alice", "alice", "bob"}, false, false)
-	c.Equal(3, simple.total)
+	// The last entry's cumulative weight is the grand total: 1 each for the two alices and bob.
+	c.Equal(3, simple.data[len(simple.data)-1].cumulative)
+	// Each entry's own weight is its cumulative minus the previous one; the two "alice" occurrences sum to 2 rather
+	// than collapsing to a single entry of weight 1.
 	aliceCount := 0
+	prev := 0
 	for _, nc := range simple.data {
 		if nc.name == "alice" {
-			aliceCount += nc.count
+			aliceCount += nc.cumulative - prev
 		}
+		prev = nc.cumulative
 	}
 	c.Equal(2, aliceCount)
 
