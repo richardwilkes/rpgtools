@@ -25,6 +25,9 @@ import (
 // GURPSFormat determines whether GURPS dice formatting should be used. A value of true means the die count is always
 // shown and the sides value is suppressed if it is a '6', while a value of false means the die count is suppressed if
 // it is a '1' and the sides value is always shown.
+//
+// If you modify this, you are responsible for ensuring it is done in a thread-safe context, as this code assumes it is
+// effectively immutable when used.
 var GURPSFormat = false
 
 // MaxValue and MinValue bound each Dice field. The fields are kept within this range so that combinations of large
@@ -34,9 +37,12 @@ var GURPSFormat = false
 // These are variables so the limits may be tuned, but raise MaxValue with care: the calculations multiply up to three
 // fields together (e.g. Maximum computes count*sides*multiplier), so a MaxValue much above ~2,000,000 risks overflowing
 // the int results on a 64-bit platform.
+//
+// If you modify either of these variables, you are responsible for ensuring it is done in a thread-safe context, as
+// this code assumes they are effectively immutable when used.
 var (
-	MaxValue = 1_000_000
-	MinValue = -1_000_000
+	MaxValue = 2_000_000
+	MinValue = -2_000_000
 )
 
 // Dice holds the dice information.
