@@ -18,34 +18,9 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
-
-	"github.com/richardwilkes/toolbox/v2/xrand"
 )
 
-// GURPSFormat determines whether GURPS dice formatting should be used. A value of true means the die count is always
-// shown and the sides value is suppressed if it is a '6', while a value of false means the die count is suppressed if
-// it is a '1' and the sides value is always shown.
-//
-// If you modify this, you are responsible for ensuring it is done in a thread-safe context, as this code assumes it is
-// effectively immutable when used.
-var GURPSFormat = false
-
-// MaxValue and MinValue bound each Dice field. The fields are kept within this range so that combinations of large
-// values cannot saturate or overflow the derived calculations. MinValue only applies to Modifier, the sole field that
-// may be negative; Count and Sides have a minimum of 0 and Multiplier a minimum of 1.
-//
-// These are variables so the limits may be tuned, but raise MaxValue with care: the calculations multiply up to three
-// fields together (e.g. Maximum computes count*sides*multiplier), so a MaxValue much above ~2,000,000 risks overflowing
-// the int results on a 64-bit platform.
-//
-// If you modify either of these variables, you are responsible for ensuring it is done in a thread-safe context, as
-// this code assumes they are effectively immutable when used.
-var (
-	MaxValue = 2_000_000
-	MinValue = -2_000_000
-)
-
-// Dice holds the dice information.
+// Dice holds the basic dice information.
 type Dice struct {
 	Count      int
 	Sides      int
@@ -53,28 +28,62 @@ type Dice struct {
 	Multiplier int
 }
 
-// Roll the dice. This is short-hand for New(spec).Roll(extraDiceFromModifiers).
-func Roll(spec string, extraDiceFromModifiers bool) int {
-	return New(spec).Roll(extraDiceFromModifiers)
+// MarshalText implements the encoding.TextMarshaler interface.
+func (dice Dice) MarshalText() (text []byte, err error) {
+	return []byte(dice.format(DefaultConfig().GURPSFormat)), nil
 }
 
-// New creates a new Dice based on the given spec.
-func New(spec string) *Dice {
-	spec = strings.TrimSpace(spec)
+func (dice Dice) format(gurpsFormat bool) string {
+	var buffer bytes.Buffer
+	if dice.Count > 0 {
+		if gurpsFormat || dice.Count > 1 {
+			buffer.WriteString(strconv.Itoa(dice.Count))
+		}
+		buffer.WriteString("d")
+		if !gurpsFormat || dice.Sides != 6 {
+			buffer.WriteString(strconv.Itoa(dice.Sides))
+		}
+	}
+	if dice.Modifier != 0 {
+		if dice.Modifier > 0 {
+			if buffer.Len() != 0 {
+				buffer.WriteString("+")
+			}
+		}
+		buffer.WriteString(strconv.Itoa(dice.Modifier))
+	}
+	if buffer.Len() == 0 {
+		buffer.WriteString("0")
+	}
+	if dice.Multiplier != 1 && (dice.Count > 0 || dice.Modifier != 0) {
+		buffer.WriteString("x")
+		buffer.WriteString(strconv.Itoa(dice.Multiplier))
+	}
+	return buffer.String()
+}
+
+// UnmarshalText implements the encoding.TextUnmarshaler interface.
+func (dice *Dice) UnmarshalText(text []byte) error {
+	*dice = parseDice(string(text), math.MaxInt, math.MaxInt, math.MaxInt, math.MaxInt)
+	return nil
+}
+
+func parseDice(in string, maxCount, maxSides, maxModifier, maxMultiplier int) Dice {
+	in = strings.TrimSpace(in)
 	var dice Dice
 	var i int
-	var ch byte
-	dice.Count, i = extractValue(spec, 0)
+	dice.Count, i = extractValue(in, 0, maxCount)
 	hadCount := i != 0
-	ch, i = nextChar(spec, i)
+	var ch byte
+	ch, i = nextChar(in, i)
 	hadSides := false
 	hadD := false
 	if isDieMarker(rune(ch)) {
 		hadD = true
 		j := i
-		dice.Sides, i = extractValue(spec, i)
+		dice.Sides, i = extractValue(in, i, maxSides)
 		hadSides = i != j
-		ch, i = nextChar(spec, i)
+		ch, i = nextChar(in, i)
 	}
 	if hadSides && !hadCount {
 		dice.Count = 1
@@ -83,61 +92,48 @@ func New(spec string) *Dice {
 	}
 	if isSign(rune(ch)) {
 		neg := ch == '-'
-		dice.Modifier, i = extractValue(spec, i)
+		dice.Modifier, i = extractValue(in, i, maxModifier)
 		if neg {
 			dice.Modifier = -dice.Modifier
 		}
-		ch, i = nextChar(spec, i)
+		ch, i = nextChar(in, i)
 	}
 	if !hadD {
 		dice.Modifier += dice.Count
 		dice.Count = 0
 	}
 	if isMultiplier(rune(ch)) {
-		dice.Multiplier, _ = extractValue(spec, i)
+		dice.Multiplier, _ = extractValue(in, i, maxMultiplier)
 	}
 	if dice.Multiplier == 0 {
 		dice.Multiplier = 1
 	}
-	dice.Normalize()
-	return &dice
+	return dice
 }
 
-func nextChar(in string, inPos int) (ch byte, outPos int) {
-	if inPos < len(in) {
-		return in[inPos], inPos + 1
+// Hash writes this object's contents into the hasher.
+//
+//nolint:errcheck // Ignore failure to check error return on binary.Write
+func (dice *Dice) Hash(h hash.Hash) {
+	if dice == nil {
+		return
 	}
-	return 0, inPos
+	_ = binary.Write(h, binary.LittleEndian, int64(dice.Count))
+	_ = binary.Write(h, binary.LittleEndian, int64(dice.Sides))
+	_ = binary.Write(h, binary.LittleEndian, int64(dice.Modifier))
+	_ = binary.Write(h, binary.LittleEndian, int64(dice.Multiplier))
 }
 
-func extractValue(in string, inPos int) (value, outPos int) {
-	for inPos < len(in) {
-		ch := in[inPos]
-		if !isDigit(rune(ch)) {
-			return value, inPos
-		}
-		if value < MaxValue {
-			value = value*10 + int(ch-'0')
-			if value > MaxValue {
-				value = MaxValue // Cap rather than overflow on an absurdly long number.
-			}
-		}
-		inPos++
-	}
-	return value, inPos
-}
-
-// ExtractDicePosition returns the start (inclusive) and end (exclusive) index of the Dice specification. If none can be
-// found, -1, -1 will be returned. The span never contains an internal space and always begins with a digit or a die
-// marker, so re-parsing text[start:end] with New yields exactly the specification the span represents (New likewise
-// stops at the first space and ignores any dangling operator).
+// ExtractDicePosition returns the start (inclusive) and end (exclusive) index of a Dice specification within the text.
+// If none can be found, -1, -1 will be returned. The span never contains an internal space and always begins with a
+// digit or a die marker, so parsing text[start:end] yields exactly the specification the span represents.
 func ExtractDicePosition(text string) (start, end int) {
 	start = -1
 	state := 0
 	foundDigit := false   // The current candidate contains at least one digit (a count or a number of sides).
 	hasD := false         // The current candidate contains a 'd'.
 	droppedD := false     // A standalone (non-word) 'd' was discarded because no digit followed it.
-	dInWord := false      // The 'd' starting the current candidate is adjacent to a prose letter, so it is part of a word.
+	dInWord := false      // The 'd' starting the current candidate is adjacent to a letter, so it is part of a word.
 	signHasDigit := false // A digit has followed the latest sign, so the sign has an operand and is not dangling.
 	maximum := len(text)
 	var prev rune
@@ -266,207 +262,4 @@ func isSign(ch rune) bool { return ch == '+' || ch == '-' }
 // so ExtractDicePosition must not treat it as a discarded die marker.
 func isProseLetter(r rune) bool {
 	return unicode.IsLetter(r) && !isDieMarker(r) && !isMultiplier(r)
-}
-
-// Minimum returns the minimum result. 'extraDiceFromModifiers' determines if modifiers greater than or equal to the
-// average result of the base die should be converted to extra dice for the purposes of this call. For example, 1d6+8
-// will become 3d6+1.
-func (dice *Dice) Minimum(extraDiceFromModifiers bool) int {
-	count, sides, result, multiplier := dice.adjustedValues(extraDiceFromModifiers)
-	if sides > 0 {
-		result += count
-	}
-	return result * multiplier
-}
-
-// Average returns the average result. 'extraDiceFromModifiers' determines if modifiers greater than or equal to the
-// average result of the base die should be converted to extra dice for the purposes of this call. For example, 1d6+8
-// will become 3d6+1.
-func (dice *Dice) Average(extraDiceFromModifiers bool) int {
-	count, sides, result, multiplier := dice.adjustedValues(extraDiceFromModifiers)
-	if count > 0 && sides > 0 {
-		result += count * (sides + 1) / 2
-	}
-	return result * multiplier
-}
-
-// Maximum returns the maximum result. 'extraDiceFromModifiers' determines if modifiers greater than or equal to the
-// average result of the base die should be converted to extra dice for the purposes of this call. For example, 1d6+8
-// will become 3d6+1.
-func (dice *Dice) Maximum(extraDiceFromModifiers bool) int {
-	count, sides, result, multiplier := dice.adjustedValues(extraDiceFromModifiers)
-	result += count * sides
-	return result * multiplier
-}
-
-// Roll returns the result of rolling the dice. 'extraDiceFromModifiers' determines if modifiers greater than or equal
-// to the average result of the base die should be converted to extra dice for the purposes of this call. For example,
-// 1d6+8 will become 3d6+1.
-func (dice *Dice) Roll(extraDiceFromModifiers bool) int {
-	return dice.RollWithRandomizer(nil, extraDiceFromModifiers)
-}
-
-// RollWithRandomizer returns the result of rolling the dice. If 'rnd' is nil, rand.NewCryptoRand() will be used.
-// 'extraDiceFromModifiers' determines if modifiers greater than or equal to the average result of the base die should
-// be converted to extra dice for the purposes of this call. For example, 1d6+8 will become 3d6+1.
-func (dice *Dice) RollWithRandomizer(rnd xrand.Randomizer, extraDiceFromModifiers bool) int {
-	count, sides, result, multiplier := dice.adjustedValues(extraDiceFromModifiers)
-	if rnd == nil {
-		rnd = xrand.New()
-	}
-	switch {
-	case sides > 1:
-		for range count {
-			result += 1 + rnd.Intn(sides)
-		}
-	case sides == 1:
-		result += count
-	}
-	return result * multiplier
-}
-
-func (dice *Dice) String() string {
-	return dice.StringExtra(false)
-}
-
-// StringExtra returns the text representation of the Dice. 'extraDiceFromModifiers' determines if modifiers greater
-// than or equal to the average result of the base die should be converted to extra dice for the purposes of this call.
-// For example, 1d6+8 will become 3d6+1.
-func (dice *Dice) StringExtra(extraDiceFromModifiers bool) string {
-	count, sides, modifier, multiplier := dice.adjustedValues(extraDiceFromModifiers)
-	var buffer bytes.Buffer
-	if count > 0 {
-		if GURPSFormat || count > 1 {
-			buffer.WriteString(strconv.Itoa(count))
-		}
-		buffer.WriteString("d")
-		if !GURPSFormat || sides != 6 {
-			buffer.WriteString(strconv.Itoa(sides))
-		}
-	}
-	if modifier > 0 {
-		if buffer.Len() != 0 {
-			buffer.WriteString("+")
-		}
-		buffer.WriteString(strconv.Itoa(modifier))
-	} else if modifier < 0 {
-		buffer.WriteString(strconv.Itoa(modifier))
-	}
-	if buffer.Len() == 0 {
-		buffer.WriteString("0")
-	}
-	if multiplier != 1 {
-		buffer.WriteString("x")
-		buffer.WriteString(strconv.Itoa(multiplier))
-	}
-	return buffer.String()
-}
-
-// ApplyExtraDiceFromModifiers alters the Dice, converting modifiers greater than or equal to the average result of the
-// base die to extra dice. For example, 1d6+8 will become 3d6+1.
-func (dice *Dice) ApplyExtraDiceFromModifiers() {
-	dice.Count, dice.Sides, dice.Modifier, dice.Multiplier = dice.adjustedValues(true)
-}
-
-// adjustedValues returns the field values clamped to their permitted ranges, optionally converting modifiers to extra
-// dice. It does not modify the receiver, so it is safe to call on Dice whose exported fields have been set directly to
-// out-of-range values.
-func (dice *Dice) adjustedValues(applyExtraDiceFromModifiers bool) (count, sides, modifier, multiplier int) {
-	count, sides, modifier, multiplier = dice.clamped()
-	if sides == 0 {
-		return count, sides, modifier, multiplier
-	}
-	if applyExtraDiceFromModifiers && modifier > 0 {
-		average := (sides + 1) / 2
-		if sides&1 == 1 {
-			// Odd number of sides, so average is a whole number
-			count += modifier / average
-			modifier %= average
-		} else {
-			// Even number of sides, so each die's true average is average+0.5. A pair of dice therefore consumes
-			// exactly 2*average+1 of the modifier and a lone die consumes average+1 (rounding the trailing half up).
-			// Compute the whole-pair and optional trailing-die counts directly; doing it by subtracting in a loop is
-			// O(modifier), which is needlessly slow when the modifier is near its cap.
-			perPair := 2*average + 1
-			count += 2 * (modifier / perPair)
-			modifier %= perPair
-			if modifier >= average+1 {
-				count++
-				modifier -= average + 1
-			}
-		}
-		count = min(count, MaxValue) // Converting a large modifier can push the count past its maximum.
-	}
-	return count, sides, modifier, multiplier
-}
-
-// clamped returns each field constrained to its permitted range without modifying the receiver. Because the fields are
-// exported, callers may set them to any value, so every use must clamp rather than assume a valid range. A Dice that
-// rolls no dice (a zero Count or a zero Sides) has no meaningful Count or Sides, so both are collapsed to 0. This gives
-// every "no dice" spec one canonical form: it renders as just its modifier and compares (and hashes) equal to any other
-// no-dice spec with the same modifier, so e.g. "0d6+2", "3d0+2" and "2" all behave identically rather than only some of
-// them collapsing depending on which field happened to be zero.
-func (dice *Dice) clamped() (count, sides, modifier, multiplier int) {
-	count = min(max(dice.Count, 0), MaxValue)
-	sides = min(max(dice.Sides, 0), MaxValue)
-	modifier = min(max(dice.Modifier, MinValue), MaxValue)
-	multiplier = min(max(dice.Multiplier, 1), MaxValue)
-	if count == 0 || sides == 0 {
-		count = 0
-		sides = 0
-	}
-	return count, sides, modifier, multiplier
-}
-
-// Normalize the internal state, clamping each field to its permitted range.
-func (dice *Dice) Normalize() {
-	dice.Count, dice.Sides, dice.Modifier, dice.Multiplier = dice.clamped()
-}
-
-// MarshalText implements the encoding.TextMarshaler interface.
-func (dice Dice) MarshalText() (text []byte, err error) {
-	return []byte(dice.String()), nil
-}
-
-// UnmarshalText implements the encoding.TextUnmarshaler interface.
-func (dice *Dice) UnmarshalText(text []byte) error {
-	*dice = *New(string(text))
-	return nil
-}
-
-// IsEquivalent returns true if this Dice is equivalent to another Dice. Both are compared as if normalized, without
-// modifying either Dice.
-func (dice *Dice) IsEquivalent(other *Dice) bool {
-	left := *dice
-	right := *other
-	left.Normalize()
-	right.Normalize()
-	return left == right
-}
-
-// PoolProbability return the probability that at least one die will be equal to or greater than the target value.
-func (dice *Dice) PoolProbability(target int) float64 {
-	count, sides, _, _ := dice.clamped()
-	if count < 1 || sides < 1 || sides < target {
-		return 0
-	}
-	if target < 1 {
-		// Every die rolls at least 1, so a non-positive target is always met.
-		return 1
-	}
-	return 1 - math.Pow(1-float64(1+sides-target)/float64(sides), float64(count))
-}
-
-// Hash writes this object's contents into the hasher.
-//
-//nolint:errcheck // Ignore failure to check error return on binary.Write
-func (dice *Dice) Hash(h hash.Hash) {
-	if dice == nil {
-		return
-	}
-	count, sides, modifier, multiplier := dice.clamped()
-	_ = binary.Write(h, binary.LittleEndian, int64(count))
-	_ = binary.Write(h, binary.LittleEndian, int64(sides))
-	_ = binary.Write(h, binary.LittleEndian, int64(modifier))
-	_ = binary.Write(h, binary.LittleEndian, int64(multiplier))
 }

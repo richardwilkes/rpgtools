@@ -117,7 +117,7 @@ func (c *Config) Clone() *Config {
 // Valid returns nil if the data is usable.
 func (c *Config) Valid() error {
 	if c == nil {
-		return errs.New("configuration may not be nil")
+		return errs.New("may not be nil")
 	}
 	if len(c.WeekDays) == 0 {
 		return errs.New("must have at least one week day")
