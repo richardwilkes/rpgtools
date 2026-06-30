@@ -108,7 +108,9 @@ func (c *Config) Valid() error {
 // resulting sum may be negative, so the final multiply by c.MaxMultiplier is checked against both math.MaxInt and
 // math.MinInt; because c.MaxMultiplier is >= 1, the bound on the wrong side of zero is never crossed. Each step is
 // checked in Go's evaluation order, so an intermediate result overflowing is caught even when the final value would
-// have been representable.
+// have been representable. Average forms a slightly larger intermediate than the equation above -- count*(sides+1)
+// rather than count*sides -- so that product+count step is bounded as well, keeping every Roller computation safe and
+// not just the one shown.
 func (c *Config) equationOverflows() bool {
 	var count, modifier int
 	if c.ExtraDiceFromModifiers {
@@ -125,6 +127,13 @@ func (c *Config) equationOverflows() bool {
 		return true
 	}
 	product := count * c.MaxSides
+	// Average evaluates count*(sides+1) -- that is, product + count -- before halving, so the product must leave room
+	// to add count back without overflowing. count is >= 1 here (MaxCount is >= 1 and the ExtraDiceFromModifiers
+	// adjustment only adds to it), so this also rejects a MaxSides of math.MaxInt, where the sides+1 term itself would
+	// wrap.
+	if product > math.MaxInt-count {
+		return true
+	}
 	if modifier > 0 && product > math.MaxInt-modifier {
 		return true
 	}
