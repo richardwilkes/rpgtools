@@ -7,20 +7,18 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-package calendar
+package calendar_test
 
 import (
-	"strconv"
 	"testing"
 
+	"github.com/richardwilkes/rpgtools/calendar"
 	"github.com/richardwilkes/toolbox/v2/check"
 )
 
-func TestWidthNeeded(t *testing.T) {
+func TestValidPrefabs(t *testing.T) {
 	c := check.New(t)
-	// widthNeeded must equal the decimal digit count for every non-negative input (the only kind the callers pass),
-	// including the powers-of-ten boundaries where the digit count rolls over.
-	for _, count := range []int{0, 1, 9, 10, 11, 99, 100, 101, 999, 1000, 123456} {
-		c.Equal(len(strconv.Itoa(count)), widthNeeded(count), "count %d", count)
-	}
+	c.NoError(calendar.Gregorian().Config().Valid())
+	c.NoError(calendar.PathfinderAbsalomReckoning().Config().Valid())
+	c.NoError(calendar.PathfinderImperialCalendar().Config().Valid())
 }

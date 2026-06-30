@@ -18,7 +18,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/richardwilkes/rpgtools/calendar"
-	"github.com/richardwilkes/rpgtools/calendar/pathfinder"
 	"github.com/richardwilkes/toolbox/v2/check"
 	"gopkg.in/yaml.v3"
 )
@@ -26,7 +25,6 @@ import (
 func TestNewDate(t *testing.T) {
 	c := check.New(t)
 	cal := calendar.Gregorian()
-	calendar.Default = cal
 	d, err := cal.NewDate(1, 1, 1)
 	c.NoError(err)
 	c.Equal(cal.NewDateByDays(0), d)
@@ -64,7 +62,6 @@ func TestNewDate(t *testing.T) {
 func TestYear(t *testing.T) {
 	c := check.New(t)
 	cal := calendar.Gregorian()
-	calendar.Default = cal
 	c.Equal(1, cal.NewDateByDays(0).Year(), "First day of year 1")
 	c.Equal(1, cal.NewDateByDays(364).Year(), "Last day of year 1")
 	c.Equal(2, cal.NewDateByDays(365).Year(), "First day of year 2")
@@ -94,15 +91,15 @@ func TestYear(t *testing.T) {
 func TestYearLargeDays(t *testing.T) {
 	c := check.New(t)
 	cal := calendar.Gregorian()
-	for _, days := range []int{1 << 40, 1 << 50, 1 << 62, -(1 << 40), -(1 << 50), -(1 << 62)} {
+	for _, days := range []int{math.MaxInt32, math.MaxInt32 - 2, math.MinInt32, math.MinInt32 + 2} {
 		year := cal.NewDateByDays(days).Year()
 		c.True(year != 0, "year is never 0 (days=%d)", days)
-		c.True(cal.MustNewDate(1, 1, year).Days <= days, "1/1/%d must start on or before days=%d", year, days)
+		c.True(cal.MustNewDate(1, 1, year).Days() <= days, "1/1/%d must start on or before days=%d", year, days)
 		next := year + 1
 		if next == 0 { // skip the nonexistent year 0 when stepping forward from year -1
 			next = 1
 		}
-		c.True(days < cal.MustNewDate(1, 1, next).Days, "1/1/%d must start after days=%d", next, days)
+		c.True(days < cal.MustNewDate(1, 1, next).Days(), "1/1/%d must start after days=%d", next, days)
 	}
 }
 
@@ -114,14 +111,15 @@ func TestYearLargeDays(t *testing.T) {
 // y < 0, which pins the expected year at each extreme.
 func TestYearInt64Extremes(t *testing.T) {
 	c := check.New(t)
-	cal := &calendar.Calendar{
+	cal, err := calendar.New(&calendar.Config{
 		WeekDays: []string{"A", "B"},
 		Months:   []calendar.Month{{Name: "First", Days: 1}, {Name: "Second", Days: 1}},
-	}
-	// math.MaxInt: year 4611686018427387904 starts on day MaxInt-1; the following year would start past MaxInt.
-	c.Equal(4611686018427387904, cal.NewDateByDays(math.MaxInt).Year())
-	// math.MinInt: year -4611686018427387904 starts exactly on day MinInt.
-	c.Equal(-4611686018427387904, cal.NewDateByDays(math.MinInt).Year())
+	})
+	c.NoError(err)
+	// This should saturate at 1 + DaysLimit / 2, or 1,152,921,504,606,846,977.
+	c.Equal(1_152_921_504_606_846_977, cal.NewDateByDays(math.MaxInt64).Year())
+	// This should saturate at -DaysLimit / 2, or -1,152,921,504,606,846,976.
+	c.Equal(-1_152_921_504_606_846_976, cal.NewDateByDays(math.MinInt64).Year())
 	// Year must stay non-decreasing in Days right at the limits, where the off-by-one used to appear.
 	for _, base := range []int{math.MaxInt, math.MinInt + 5} {
 		for off := 1; off <= 5; off++ {
@@ -133,10 +131,34 @@ func TestYearInt64Extremes(t *testing.T) {
 	}
 }
 
+// TestYearNearInt32Boundary guards against the leap-counting year search overshooting for valid years near the int32
+// limit. Date.Year's binary search upper bound (date.days/minDays+1) runs past math.MaxInt32 for a date whose year sits
+// near the top of the valid range, so the search probes years just beyond the limit. The internal leap math must stay
+// correct for those probe years or the search loses monotonicity and settles past the limit; the regression resolved
+// Gregorian 1/1/MaxInt32 to year 2148910399 / month 11 instead of MaxInt32 / month 1. Exercise both int32 extremes on
+// calendars that carry a leap rule (a no-leap calendar never hits the leap math, so it is unaffected).
+func TestYearNearInt32Boundary(t *testing.T) {
+	c := check.New(t)
+	for _, cal := range []*calendar.Calendar{calendar.Gregorian(), calendar.PathfinderAbsalomReckoning()} {
+		for _, year := range []int{
+			math.MaxInt32, math.MaxInt32 - 1, math.MaxInt32 - 2, math.MaxInt32 - 100,
+			math.MinInt32, math.MinInt32 + 1, math.MinInt32 + 2, math.MinInt32 + 100,
+		} {
+			first := cal.MustNewDate(1, 1, year)
+			c.Equal(year, first.Year(), "Year() of 1/1/%d", year)
+			c.Equal(1, first.Month(), "Month() of 1/1/%d", year)
+			c.Equal(1, first.DayInMonth(), "DayInMonth() of 1/1/%d", year)
+			// A later day in the same year must resolve back to the same year and a day count 14 days on.
+			mid := cal.MustNewDate(1, 15, year)
+			c.Equal(year, mid.Year(), "Year() of 1/15/%d", year)
+			c.Equal(first.Days()+14, mid.Days(), "Days() of 1/15/%d", year)
+		}
+	}
+}
+
 func TestDayInYear(t *testing.T) {
 	c := check.New(t)
 	cal := calendar.Gregorian()
-	calendar.Default = cal
 	c.Equal(1, cal.MustNewDate(1, 1, 1).DayInYear())
 	c.Equal(365, cal.MustNewDate(12, 31, 1).DayInYear())
 	c.Equal(1, cal.MustNewDate(1, 1, 2).DayInYear())
@@ -154,7 +176,6 @@ func TestDayInYear(t *testing.T) {
 func TestMonth(t *testing.T) {
 	c := check.New(t)
 	cal := calendar.Gregorian()
-	calendar.Default = cal
 	c.Equal(1, cal.MustNewDate(1, 1, 1).Month())
 	c.Equal(1, cal.MustNewDate(1, 31, 1).Month())
 	c.Equal(2, cal.MustNewDate(2, 1, 1).Month())
@@ -173,7 +194,6 @@ func TestMonth(t *testing.T) {
 func TestDayInMonth(t *testing.T) {
 	c := check.New(t)
 	cal := calendar.Gregorian()
-	calendar.Default = cal
 	c.Equal(1, cal.MustNewDate(1, 1, 1).DayInMonth())
 	c.Equal(31, cal.MustNewDate(1, 31, 1).DayInMonth())
 	c.Equal(1, cal.MustNewDate(2, 1, 1).DayInMonth())
@@ -194,7 +214,6 @@ func TestDayInMonth(t *testing.T) {
 func TestDateToString(t *testing.T) {
 	c := check.New(t)
 	cal := calendar.Gregorian()
-	calendar.Default = cal
 	c.Equal("1/1/1", cal.MustNewDate(1, 1, 1).String())
 	c.Equal("12/31/1", cal.MustNewDate(12, 31, 1).String())
 	c.Equal("1/1/2", cal.MustNewDate(1, 1, 2).String())
@@ -211,7 +230,6 @@ func TestDateToString(t *testing.T) {
 func TestWeekDay(t *testing.T) {
 	c := check.New(t)
 	cal := calendar.Gregorian()
-	calendar.Default = cal
 	c.Equal(1, cal.MustNewDate(1, 1, 1).WeekDay())
 	c.Equal(4, cal.MustNewDate(1, 4, 1).WeekDay())
 	c.Equal(1, cal.MustNewDate(1, 8, 1).WeekDay())
@@ -225,7 +243,6 @@ func TestWeekDay(t *testing.T) {
 func TestFormat(t *testing.T) {
 	c := check.New(t)
 	cal := calendar.Gregorian()
-	calendar.Default = cal
 	d := cal.MustNewDate(9, 22, 2017)
 	c.Equal("9/22/2017", d.Format(calendar.ShortFormat))
 	c.Equal("Sep 22, 2017", d.Format(calendar.MediumFormat))
@@ -250,7 +267,6 @@ func TestFormat(t *testing.T) {
 func TestFormatRepeatedDirectivesConsistent(t *testing.T) {
 	c := check.New(t)
 	cal := calendar.Gregorian() // distinct eras: AD / BC
-	calendar.Default = cal
 
 	d := cal.MustNewDate(9, 22, -1) // year -1
 	// %z is the raw signed year; %y and %Y render the previous era as "1 BC". Each %z must still report -1 even though
@@ -270,7 +286,6 @@ func TestFormatRepeatedDirectivesConsistent(t *testing.T) {
 func TestMediumFormatRoundTripsThroughParse(t *testing.T) {
 	c := check.New(t)
 	cal := calendar.Gregorian()
-	calendar.Default = cal
 	for month := 1; month <= 12; month++ {
 		want := cal.MustNewDate(month, 15, 2017)
 		formatted := want.Format(calendar.MediumFormat) // uses %m, the abbreviated month name
@@ -281,15 +296,19 @@ func TestMediumFormatRoundTripsThroughParse(t *testing.T) {
 }
 
 // eraTestCalendar builds a small but valid calendar whose only interesting variation is its era pair.
-func eraTestCalendar(era, previousEra string) *calendar.Calendar {
-	return &calendar.Calendar{
+func eraTestCalendar(era, previousEra string) (*calendar.Calendar, error) {
+	return calendar.New(&calendar.Config{
 		DayZeroWeekDay: 0,
 		WeekDays:       []string{"A", "B", "C", "D", "E", "F", "G"},
-		Months:         []calendar.Month{{Name: "Janus", Days: 30}, {Name: "Febris", Days: 30}, {Name: "Martis", Days: 30}},
-		Seasons:        []calendar.Season{{Name: "S", StartMonth: 1, StartDay: 1, EndMonth: 3, EndDay: 30}},
-		Era:            era,
-		PreviousEra:    previousEra,
-	}
+		Months: []calendar.Month{
+			{Name: "Janus", Days: 30},
+			{Name: "Febris", Days: 30},
+			{Name: "Martis", Days: 30},
+		},
+		Seasons:     []calendar.Season{{Name: "S", StartMonth: 1, StartDay: 1, EndMonth: 3, EndDay: 30}},
+		Era:         era,
+		PreviousEra: previousEra,
+	})
 }
 
 // TestEraDisplayModel pins the single era model (eraForYear) that %z, %Y, %y and Date.Era all build on, across the
@@ -313,7 +332,8 @@ func TestEraDisplayModel(t *testing.T) {
 		{"", "", 2017, "2017", "2017", "2017", ""},
 		{"", "", -5, "-5", "-5", "-5", ""},
 	} {
-		cal := eraTestCalendar(tc.era, tc.prev)
+		cal, err := eraTestCalendar(tc.era, tc.prev)
+		c.NoError(err)
 		d := cal.MustNewDate(2, 15, tc.year)
 		c.Equal(tc.wantZ, d.Format("%z"), "directive z, eras %q/%q, year %d", tc.era, tc.prev, tc.year)
 		c.Equal(tc.wantY, d.Format("%Y"), "directive Y, eras %q/%q, year %d", tc.era, tc.prev, tc.year)
@@ -328,12 +348,13 @@ func TestEraDisplayModel(t *testing.T) {
 func TestEraRoundTripsThroughParse(t *testing.T) {
 	c := check.New(t)
 	for _, eras := range [][2]string{{"AD", "BC"}, {"AR", "AR"}, {"", ""}} {
-		cal := eraTestCalendar(eras[0], eras[1])
-		c.NoError(cal.Valid())
+		cal, err := eraTestCalendar(eras[0], eras[1])
+		c.NoError(err)
 		for _, year := range []int{2017, 5, 1, -1, -5, -2017} {
 			want := cal.MustNewDate(2, 15, year)
 			formatted := want.Format("%M %D, %y")
-			got, err := cal.ParseDate(formatted)
+			var got calendar.Date
+			got, err = cal.ParseDate(formatted)
 			c.NoError(err, "eras %q/%q year %d formatted as %q", eras[0], eras[1], year, formatted)
 			c.Equal(want, got, "eras %q/%q: %q did not round-trip", eras[0], eras[1], formatted)
 		}
@@ -343,7 +364,6 @@ func TestEraRoundTripsThroughParse(t *testing.T) {
 func TestFormatZeroPadded(t *testing.T) {
 	c := check.New(t)
 	cal := calendar.Gregorian()
-	calendar.Default = cal
 	c.Equal("01/01", cal.MustNewDate(1, 1, 2017).Format("%n/%d"))
 	c.Equal("09/22", cal.MustNewDate(9, 22, 2017).Format("%n/%d"))
 	c.Equal("02/29", cal.MustNewDate(2, 29, 2016).Format("%n/%d"))
@@ -358,12 +378,13 @@ func TestFormatDayWidthConsistent(t *testing.T) {
 
 	// A calendar whose months have very different lengths. The zero-padded day (%d) width must be consistent across
 	// every month, sized to the calendar's longest month rather than the month being formatted.
-	cal := &calendar.Calendar{
+	cal, err := calendar.New(&calendar.Config{
 		WeekDays:       []string{"A", "B", "C"},
 		DayZeroWeekDay: 0,
 		Months:         []calendar.Month{{Name: "Short", Days: 5}, {Name: "Long", Days: 40}},
 		Seasons:        []calendar.Season{{Name: "All", StartMonth: 1, StartDay: 1, EndMonth: 2, EndDay: 40}},
-	}
+	})
+	c.NoError(err)
 	// Day 3 of the short month previously rendered as "3" (width 1) while the long month rendered "03" (width 2); both
 	// must now be "03".
 	c.Equal("03", cal.MustNewDate(1, 3, 1).Format("%d"))
@@ -371,13 +392,15 @@ func TestFormatDayWidthConsistent(t *testing.T) {
 	c.Equal("40", cal.MustNewDate(2, 40, 1).Format("%d"))
 
 	// The leap month's extra day is accounted for, so the width is also consistent between leap and non-leap years.
-	leapCal := &calendar.Calendar{
+	var leapCal *calendar.Calendar
+	leapCal, err = calendar.New(&calendar.Config{
 		WeekDays:       []string{"A", "B"},
 		DayZeroWeekDay: 0,
 		Months:         []calendar.Month{{Name: "M", Days: 9}},
 		Seasons:        []calendar.Season{{Name: "All", StartMonth: 1, StartDay: 1, EndMonth: 1, EndDay: 9}},
 		LeapYear:       &calendar.LeapYear{Month: 1, Every: 2},
-	}
+	})
+	c.NoError(err)
 	c.Equal("03", leapCal.MustNewDate(1, 3, 1).Format("%d"))  // year 1: 9-day month
 	c.Equal("03", leapCal.MustNewDate(1, 3, 2).Format("%d"))  // year 2 (leap): 10-day month
 	c.Equal("10", leapCal.MustNewDate(1, 10, 2).Format("%d")) // the leap day itself
@@ -385,10 +408,11 @@ func TestFormatDayWidthConsistent(t *testing.T) {
 
 func TestTextMultiByteWeekDayNames(t *testing.T) {
 	c := check.New(t)
-	cal := calendar.Gregorian()
+	cfg := calendar.Gregorian().Config()
 	// Week day names whose first rune is multi-byte in UTF-8.
-	cal.WeekDays = []string{"Étoile", "Понедельник", "Δευτέρα", "三", "Mercredi", "木曜日", "Saturn"}
-	calendar.Default = cal
+	cfg.WeekDays = []string{"Étoile", "Понедельник", "Δευτέρα", "三", "Mercredi", "木曜日", "Saturn"}
+	cal, err := calendar.New(cfg)
+	c.NoError(err)
 
 	var buf bytes.Buffer
 	cal.Text(2017, &buf)
@@ -405,21 +429,16 @@ func TestTextMultiByteWeekDayNames(t *testing.T) {
 
 func TestTextEmptyWeekDayNameDoesNotPanic(t *testing.T) {
 	c := check.New(t)
-	cal := calendar.Gregorian()
+	cfg := calendar.Gregorian().Config()
 	// An empty week day name previously caused weekday[:1] to panic.
-	cal.WeekDays = []string{"", "B", "C", "D", "E", "F", "G"}
-	calendar.Default = cal
-
-	var buf bytes.Buffer
-	cal.Text(2017, &buf)
-	cal.MustNewDate(1, 1, 2017).TextCalendarMonth(&buf)
-	c.True(buf.Len() > 0)
+	cfg.WeekDays = []string{"", "B", "C", "D", "E", "F", "G"}
+	_, err := calendar.New(cfg)
+	c.HasError(err)
 }
 
 func TestParseDate(t *testing.T) {
 	c := check.New(t)
 	cal := calendar.Gregorian()
-	calendar.Default = cal
 	targetDate := cal.MustNewDate(9, 22, 2017)
 	date, err := cal.ParseDate("A long, rambling prefix September 22, 2017 and a long suffix")
 	c.NoError(err)
@@ -484,9 +503,11 @@ func TestParseDateSharedEraSuffix(t *testing.T) {
 	// When a calendar uses the same name for both eras (as the Pathfinder calendars do), the suffix cannot
 	// disambiguate the year, so a negative year combined with that suffix is NOT a contradiction and must still
 	// parse, unlike the distinct-era cases rejected in TestParseDate.
-	cal := calendar.Gregorian()
-	cal.Era = "AR"
-	cal.PreviousEra = "AR"
+	cfg := calendar.Gregorian().Config()
+	cfg.Era = "AR"
+	cfg.PreviousEra = "AR"
+	cal, err := calendar.New(cfg)
+	c.NoError(err)
 	date, err := cal.ParseDate("9/22/-5 AR")
 	c.NoError(err)
 	c.Equal(cal.MustNewDate(9, 22, -5), date)
@@ -498,17 +519,18 @@ func TestParseDateSharedEraSuffix(t *testing.T) {
 func TestParseDateAmbiguousMonthAbbreviation(t *testing.T) {
 	c := check.New(t)
 	// "Marbol" and "Martok" share the first three letters, so the abbreviation "Mar" cannot identify either one.
-	cal := &calendar.Calendar{
+	cal, err := calendar.New(&calendar.Config{
 		WeekDays: []string{"One", "Two", "Three", "Four", "Five"},
 		Months: []calendar.Month{
 			{Name: "Marbol", Days: 30},
 			{Name: "Martok", Days: 30},
 			{Name: "June", Days: 30},
 		},
-	}
+	})
+	c.NoError(err)
 
 	// The ambiguous abbreviation must be rejected rather than silently resolving to the first match.
-	_, err := cal.ParseDate("Mar 5, 1200")
+	_, err = cal.ParseDate("Mar 5, 1200")
 	c.HasError(err)
 	c.True(strings.Contains(err.Error(), "ambiguous"), "expected an ambiguity error, got: %v", err)
 
@@ -532,7 +554,6 @@ func TestParseDateAmbiguousMonthAbbreviation(t *testing.T) {
 func TestMarshaling(t *testing.T) {
 	c := check.New(t)
 	cal := calendar.Gregorian()
-	calendar.Default = cal
 	date := cal.MustNewDate(9, 22, 2017)
 	text, err := date.MarshalText()
 	c.NoError(err)
@@ -565,8 +586,6 @@ func TestMarshaling(t *testing.T) {
 
 func TestZeroValueDate(t *testing.T) {
 	c := check.New(t)
-	cal := calendar.Gregorian()
-	calendar.Default = cal
 
 	// A zero-value Date has no associated calendar; accessors and formatting must fall back to
 	// Default rather than panicking with a nil pointer dereference (mirroring UnmarshalText).
@@ -575,7 +594,6 @@ func TestZeroValueDate(t *testing.T) {
 		c.Equal(1, date.Year())
 		c.Equal(1, date.Month())
 		c.Equal(1, date.DayInMonth())
-		c.Equal(cal.WeekDays[date.WeekDay()], date.WeekDayName())
 		c.Equal("1/1/1", date.String())
 	})
 
@@ -592,171 +610,9 @@ func TestZeroValueDate(t *testing.T) {
 	c.Equal(`{"Date":"1/1/1"}`, string(text))
 }
 
-func TestInvalidCalendarRejected(t *testing.T) {
-	c := check.New(t)
-
-	// A calendar with no months has no notion of a year, so date math would divide by zero. It must
-	// be rejected at construction rather than panicking later.
-	noMonths := &calendar.Calendar{WeekDays: []string{"A", "B"}}
-	_, err := noMonths.NewDate(1, 1, 1)
-	c.HasError(err)
-	_, err = noMonths.ParseDate("1/1/1")
-	c.HasError(err)
-	c.Panics(func() { noMonths.MustNewDate(1, 1, 1) })
-	c.Panics(func() { noMonths.NewDateByDays(0) })
-
-	// A calendar whose months sum to zero days is equally unusable.
-	zeroDays := &calendar.Calendar{WeekDays: []string{"A"}, Months: []calendar.Month{{Name: "M", Days: 0}}}
-	_, err = zeroDays.NewDate(1, 1, 1)
-	c.HasError(err)
-
-	// A calendar with no week days would divide by zero in WeekDay. Previously NewDateByDays produced
-	// a Date that panicked with an opaque integer divide-by-zero on first access; now it is rejected
-	// up front.
-	noWeekDays := &calendar.Calendar{Months: []calendar.Month{{Name: "M", Days: 30}}}
-	_, err = noWeekDays.NewDate(1, 1, 1)
-	c.HasError(err)
-	c.Panics(func() { noWeekDays.NewDateByDays(10) })
-
-	// A non-nil but invalid leap year rule (here an Every of 0) divides by zero in the leap year math the first time a
-	// year is resolved. checkUsable must reject it at construction rather than handing back a Date that panics on its
-	// first access. Previously NewDate(1, 1, 1) panicked here and NewDateByDays(5000) returned a Date whose Year() then
-	// panicked with an integer divide-by-zero.
-	badLeapYear := &calendar.Calendar{
-		WeekDays: []string{"A"},
-		Months:   []calendar.Month{{Name: "M", Days: 30}},
-		LeapYear: &calendar.LeapYear{Month: 1, Every: 0},
-	}
-	c.HasError(badLeapYear.Valid())
-	_, err = badLeapYear.NewDate(1, 1, 1)
-	c.HasError(err)
-	_, err = badLeapYear.ParseDate("1/1/1")
-	c.HasError(err)
-	c.Panics(func() { badLeapYear.MustNewDate(1, 1, 1) })
-	c.Panics(func() { badLeapYear.NewDateByDays(5000) })
-
-	// A day-zero week day outside the range of week days indexes past the WeekDays slice in WeekDay()/
-	// WeekDayName(). checkUsable must reject it at construction rather than handing back a Date that panics on
-	// access. Previously NewDate succeeded and NewDateByDays(0).WeekDayName() panicked with "index out of range
-	// [-1]".
-	badDayZeroWeekDay := &calendar.Calendar{
-		DayZeroWeekDay: -1,
-		WeekDays:       []string{"A", "B", "C"},
-		Months:         []calendar.Month{{Name: "M", Days: 30}},
-	}
-	c.HasError(badDayZeroWeekDay.Valid())
-	_, err = badDayZeroWeekDay.NewDate(1, 1, 1)
-	c.HasError(err)
-	_, err = badDayZeroWeekDay.ParseDate("1/1/1")
-	c.HasError(err)
-	c.Panics(func() { badDayZeroWeekDay.MustNewDate(1, 1, 1) })
-	c.Panics(func() { badDayZeroWeekDay.NewDateByDays(0) })
-
-	// An index equal to len(WeekDays) is equally out of range.
-	badDayZeroWeekDay.DayZeroWeekDay = len(badDayZeroWeekDay.WeekDays)
-	_, err = badDayZeroWeekDay.NewDate(1, 1, 1)
-	c.HasError(err)
-
-	// A structurally complete calendar with only a cosmetic flaw (an empty week day name) is rejected
-	// by the strict Valid, but must remain usable for date math.
-	cosmetic := calendar.Gregorian()
-	cosmetic.WeekDays[0] = ""
-	c.HasError(cosmetic.Valid())
-	c.NotPanics(func() { cosmetic.MustNewDate(1, 1, 2017) })
-}
-
-func TestValidCalendarIsUsableForDateMath(t *testing.T) {
-	c := check.New(t)
-	// Valid and the date constructors share one structural predicate (checkUsable), so any calendar Valid
-	// accepts must be safe for date math: none of its accessors may panic. Exercise each structural dimension
-	// (week day count, day-zero index, month layout, and a present leap year) so that, if Valid and the
-	// constructor gate ever drift apart, a valid calendar that panics on access is caught here.
-	for _, cal := range []*calendar.Calendar{
-		calendar.Gregorian(),
-		{
-			// Minimal: a single week day (day-zero index 0) and a single two-day month (the fewest a usable calendar
-			// may have), no leap year.
-			WeekDays: []string{"A"},
-			Months:   []calendar.Month{{Name: "M", Days: 2}},
-			Seasons:  []calendar.Season{{Name: "S", StartMonth: 1, StartDay: 1, EndMonth: 1, EndDay: 2}},
-		},
-		{ // Day-zero index at the last week day, two months, and a valid Except-only leap rule.
-			DayZeroWeekDay: 2,
-			WeekDays:       []string{"A", "B", "C"},
-			Months:         []calendar.Month{{Name: "M1", Days: 30}, {Name: "M2", Days: 31}},
-			Seasons:        []calendar.Season{{Name: "S", StartMonth: 1, StartDay: 1, EndMonth: 2, EndDay: 31}},
-			LeapYear:       &calendar.LeapYear{Month: 1, Every: 4, Except: 8},
-		},
-	} {
-		c.NoError(cal.Valid())
-		c.NotPanics(func() {
-			for _, d := range []int{-800, -366, -1, 0, 1, 365, 800} {
-				date := cal.NewDateByDays(d)
-				_ = date.Year()
-				_ = date.Month()
-				_ = date.DayInMonth()
-				_ = date.WeekDayName()
-				_ = date.Format(calendar.FullFormat)
-			}
-		})
-	}
-}
-
-// TestUnusableDefaultPanicsClearly verifies that when Default is reassigned to a calendar that never passed validation
-// (the realistic path for a deserialized calendar), a Date resolving through it reports the same actionable
-// "unusable calendar" error the constructors give rather than an opaque "integer divide by zero". The constructors
-// already guard their own path (TestInvalidCalendarRejected); this covers the Default-fallback access path.
-func TestUnusableDefaultPanicsClearly(t *testing.T) {
-	c := check.New(t)
-	defer func() { calendar.Default = calendar.Gregorian() }() // leave a usable Default for the other tests
-
-	// recoverMessage runs fn, recovering any panic, and reports whether it panicked along with the recovered error's
-	// message (empty when the recovered value was not an error, as an opaque runtime divide-by-zero would be).
-	recoverMessage := func(fn func()) (msg string, panicked bool) {
-		defer func() {
-			if r := recover(); r != nil {
-				panicked = true
-				if err, ok := r.(error); ok {
-					msg = err.Error()
-				}
-			}
-		}()
-		fn()
-		return msg, panicked
-	}
-
-	// A calendar with no week days and no months never passed checkUsable; every accessor must surface its error rather
-	// than dividing by zero.
-	calendar.Default = &calendar.Calendar{}
-	var date calendar.Date
-	for _, tc := range []struct { //nolint:govet // Not concerned with pointer bytes in tests
-		name string
-		fn   func()
-	}{
-		{"Year", func() { _ = date.Year() }},
-		{"WeekDay", func() { _ = date.WeekDay() }},
-		{"Month", func() { _ = date.Month() }},
-		{"WeekDayName", func() { _ = date.WeekDayName() }},
-		{"String", func() { _ = date.String() }},
-	} {
-		msg, panicked := recoverMessage(tc.fn)
-		c.True(panicked, "%s must panic on an unusable Default", tc.name)
-		c.True(strings.Contains(msg, "week day"),
-			"%s must report the clear unusable-calendar error, got %q", tc.name, msg)
-	}
-
-	// A calendar with week days but no months is the specific case Year() would divide by zero on; the error must name
-	// the missing months instead of crashing opaquely.
-	calendar.Default = &calendar.Calendar{WeekDays: []string{"A", "B"}}
-	msg, panicked := recoverMessage(func() { _ = date.Year() })
-	c.True(panicked, "Year must panic when the calendar has no months")
-	c.True(strings.Contains(msg, "month"), "Year must name the missing months, got %q", msg)
-}
-
 func TestUnmarshaling(t *testing.T) {
 	c := check.New(t)
 	cal := calendar.Gregorian()
-	calendar.Default = cal
 	target := cal.MustNewDate(9, 22, 2017)
 	var date calendar.Date
 	c.NoError(date.UnmarshalText([]byte("9/22/2017")))
@@ -782,8 +638,10 @@ func TestUnmarshaling(t *testing.T) {
 	c.NoError(yaml.Unmarshal([]byte(`date: 9/22/2017`), &embeddedPtrDate))
 	c.Equal(target, *embeddedPtrDate.Date)
 
-	cal = pathfinder.AbsalomReckoning()
-	calendar.Default = cal
+	cal = calendar.PathfinderAbsalomReckoning()
+	savedDefault := calendar.Default()
+	defer func() { calendar.SetDefault(savedDefault) }()
+	calendar.SetDefault(cal)
 	date = calendar.Date{}
 	target = cal.MustNewDate(9, 22, 2017)
 	c.NoError(date.UnmarshalText([]byte("9/22/2017 AR")))

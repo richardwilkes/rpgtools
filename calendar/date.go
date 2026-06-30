@@ -26,45 +26,57 @@ const (
 	ShortFormat  = "%N/%D/%Y"
 )
 
-// Date holds a calendar date. This is the number of days since 1/1/1 in the calendar. Note that the value -1 refers to
-// the last day of the year -1, not year 0, as there is no year 0.
+// DaysLimit is the limit to how many days a Date can represent on either side of the 1/1/1 date of a Calendar.
+const DaysLimit = 1 << 61
+
+// Date holds a calendar date. If the date was not initialized (i.e. not obtained from a Calendar), the default calendar
+// will be used when doing any operation that needs to know which calendar it was a part of.
 type Date struct {
 	cal  *Calendar
-	Days int
+	days int
 }
 
 // calendar returns the calendar associated with the date, falling back to Default for a zero-value Date that was never
-// associated with a calendar. This mirrors the behavior of UnmarshalText.
+// associated with a calendar.
 func (date Date) calendar() *Calendar {
-	if date.cal == nil {
-		return Default
+	if date.cal == nil || date.cal.cfg == nil {
+		return Default()
 	}
 	return date.cal
+}
+
+// Add delta days to the date and return a new Date, saturating to [-DaysLimit, DaysLimit] on overflow or when the sum
+// exceeds the range.
+func (date Date) Add(delta int) Date {
+	days := date.days + delta
+	if days > DaysLimit || (date.days > 0 && delta > 0 && days < 0) {
+		days = DaysLimit
+	} else if days < -DaysLimit || (date.days < 0 && delta < 0 && days > 0) {
+		days = -DaysLimit
+	}
+	return Date{
+		cal:  date.calendar(),
+		days: days,
+	}
+}
+
+// Days is the number of days since 1/1/1 in the calendar. Note that the value -1 refers to the last day of the year -1,
+// not year 0, as there is no year 0.
+func (date Date) Days() int {
+	return date.days
 }
 
 // Year returns the year of the date.
 func (date Date) Year() int {
 	cal := date.calendar()
-	cal.mustBeUsable() // the binary search below divides by minDays, so reject an unusable calendar with a clear error
 	minDays := cal.MinDaysPerYear()
-	// Binary search for the largest year whose first day falls on or before this date. yearToDaysWith is monotonic in
-	// the year, so this converges in O(log) steps; the previous code corrected an approximate year one step at a time,
-	// which was O(date.Days) and effectively hung for very large day counts (date.Days is an unbounded public field).
-	// Year 0 does not exist, so a non-negative date is searched among years >= 1 and a negative date among years <= -1,
-	// keeping the search clear of the gap. The bounds rely on every year being at least minDays long, so that
-	// yearToDays(year) >= (year-1)*minDays for a positive year and yearToDays(year) <= year*minDays for a negative one;
-	// the answer therefore satisfies year <= date.Days/minDays+1 (and year >= date.Days/minDays-1 when negative), so
-	// these bounds bracket it. The "+1"/"-1" are deliberately as tight as correctness allows: a looser bound would make
-	// the search probe a year whose yearToDaysWith leading term ((year-1)*minDays) overflows int near the int limits,
-	// silently corrupting the comparison. With minDays >= 2 (enforced by checkUsable) the probed extreme stays within
-	// (date.Days/minDays)*minDays <= date.Days, which cannot overflow.
-	lo, hi := 1, date.Days/minDays+1
-	if date.Days < 0 {
-		lo, hi = date.Days/minDays-1, -1
+	lo, hi := 1, date.days/minDays+1
+	if date.days < 0 {
+		lo, hi = date.days/minDays-1, -1
 	}
 	for lo < hi {
 		mid := lo + (hi-lo+1)/2 // bias toward hi so lo still advances when only one candidate separates them
-		if cal.yearToDaysWith(mid, minDays) <= date.Days {
+		if cal.yearToDaysWith(mid, minDays) <= date.days {
 			lo = mid
 		} else {
 			hi = mid - 1
@@ -78,11 +90,12 @@ func (date Date) Year() int {
 // each recompute the relatively expensive Year.
 func (date Date) resolve() (year, month, dayInMonth, daysInMonth int) {
 	cal := date.calendar()
+	cfg := cal.config()
 	year = date.Year()
 	isLeapYear := cal.IsLeapYear(year)
-	days := 1 + date.Days - cal.yearToDays(year)
-	for i := range cal.Months {
-		amt := cal.Months[i].Days
+	days := 1 + date.days - cal.yearToDays(year)
+	for i := range cfg.Months {
+		amt := cfg.Months[i].Days
 		if isLeapYear && cal.IsLeapMonth(i+1) {
 			amt++
 		}
@@ -92,7 +105,7 @@ func (date Date) resolve() (year, month, dayInMonth, daysInMonth int) {
 		days -= amt
 	}
 	// If this is reached, the algorithm is wrong.
-	panic("Unable to determine month") // @allow
+	panic("unable to determine month") // @allow
 }
 
 // Month returns the month of the date. Note that the first month is represented by 1, not 0.
@@ -103,12 +116,12 @@ func (date Date) Month() int {
 
 // MonthName returns the name of the month of the date.
 func (date Date) MonthName() string {
-	return date.calendar().Months[date.Month()-1].Name
+	return date.calendar().config().Months[date.Month()-1].Name
 }
 
 // DayInYear returns the day within the year of the date. Note that the first day is represented by a 1, not 0.
 func (date Date) DayInYear() int {
-	return 1 + date.Days - date.calendar().yearToDays(date.Year())
+	return 1 + date.days - date.calendar().yearToDays(date.Year())
 }
 
 // DayInMonth returns the day within the month of the date. Note that the first day is represented by a 1, not 0.
@@ -125,18 +138,17 @@ func (date Date) DaysInMonth() int {
 
 // WeekDay returns the weekday of the date.
 func (date Date) WeekDay() int {
-	cal := date.calendar()
-	cal.mustBeUsable() // the modulo below divides by len(WeekDays), so reject an unusable calendar with a clear error
-	weekday := date.Days % len(cal.WeekDays)
-	if date.Days < 0 {
-		weekday += len(cal.WeekDays)
+	cfg := date.calendar().config()
+	weekday := date.days % len(cfg.WeekDays)
+	if date.days < 0 {
+		weekday += len(cfg.WeekDays)
 	}
-	return (weekday + cal.DayZeroWeekDay) % len(cal.WeekDays)
+	return (weekday + cfg.DayZeroWeekDay) % len(cfg.WeekDays)
 }
 
 // WeekDayName returns the name of the weekday of the date.
 func (date Date) WeekDayName() string {
-	return date.calendar().WeekDays[date.WeekDay()]
+	return date.calendar().config().WeekDays[date.WeekDay()]
 }
 
 // Season returns the season that contains the date and true, or a zero Season and false when no season covers it. When
@@ -144,7 +156,32 @@ func (date Date) WeekDayName() string {
 // span (including one that wraps the year boundary) is interpreted.
 func (date Date) Season() (Season, bool) {
 	_, month, dayInMonth, _ := date.resolve()
-	return date.calendar().seasonFor(month, dayInMonth)
+	cal := date.calendar()
+	cfg := cal.config()
+	for i := range cfg.Seasons {
+		endDay := cfg.Seasons[i].EndDay
+		if cfg.Seasons[i].EndMonth >= 1 && cfg.Seasons[i].EndMonth <= len(cfg.Months) &&
+			endDay == cfg.Months[cfg.Seasons[i].EndMonth-1].Days {
+			endDay = cal.maxDaysInMonth(cfg.Seasons[i].EndMonth)
+		}
+		afterStart := onOrAfter(month, dayInMonth, cfg.Seasons[i].StartMonth, cfg.Seasons[i].StartDay)
+		beforeEnd := onOrAfter(cfg.Seasons[i].EndMonth, endDay, month, dayInMonth)
+		if onOrAfter(cfg.Seasons[i].EndMonth, endDay, cfg.Seasons[i].StartMonth, cfg.Seasons[i].StartDay) {
+			if afterStart && beforeEnd { // start on or before end: a single contiguous span
+				return cfg.Seasons[i], true
+			}
+		} else if afterStart || beforeEnd { // start after end: the span wraps the year boundary
+			return cfg.Seasons[i], true
+		}
+	}
+	return Season{}, false
+}
+
+func onOrAfter(m1, d1, m2, d2 int) bool {
+	if m1 != m2 {
+		return m1 > m2
+	}
+	return d1 >= d2
 }
 
 // Era returns the era suffix for the year.
@@ -199,9 +236,7 @@ func (date Date) Format(layout string) string {
 //	%%  %
 func (date Date) WriteFormat(w io.Writer, layout string) {
 	cal := date.calendar()
-	// Resolving the year, month and day-of-month means a binary search for the year plus a walk over the months, so do
-	// it at most once for the whole layout rather than once per directive (FullFormat alone references three of these
-	// fields). The fields are filled lazily on first use, so a layout with no date directives does no date math at all.
+	cfg := cal.config()
 	var year, month, dayInMonth int
 	resolved := false
 	resolve := func() {
@@ -222,16 +257,16 @@ func (date Date) WriteFormat(w io.Writer, layout string) {
 				fmt.Fprint(w, xstrings.FirstN(date.WeekDayName(), abbreviatedNameLength))
 			case 'M':
 				resolve()
-				fmt.Fprint(w, cal.Months[month-1].Name)
+				fmt.Fprint(w, cfg.Months[month-1].Name)
 			case 'm':
 				resolve()
-				fmt.Fprint(w, xstrings.FirstN(cal.Months[month-1].Name, abbreviatedNameLength))
+				fmt.Fprint(w, xstrings.FirstN(cfg.Months[month-1].Name, abbreviatedNameLength))
 			case 'N':
 				resolve()
 				fmt.Fprint(w, month)
 			case 'n':
 				resolve()
-				fmt.Fprintf(w, "%0[1]*[2]d", widthNeeded(len(cal.Months)), month)
+				fmt.Fprintf(w, "%0[1]*[2]d", widthNeeded(len(cfg.Months)), month)
 			case 'D':
 				resolve()
 				fmt.Fprint(w, dayInMonth)
@@ -241,7 +276,7 @@ func (date Date) WriteFormat(w io.Writer, layout string) {
 			case 'Y':
 				resolve()
 				displayYear, era := cal.eraForYear(year)
-				if era != "" && era == cal.PreviousEra {
+				if era != "" && era == cfg.PreviousEra {
 					fmt.Fprintf(w, "%d %s", displayYear, era)
 				} else {
 					fmt.Fprint(w, displayYear)
@@ -268,10 +303,8 @@ func (date Date) WriteFormat(w io.Writer, layout string) {
 	}
 }
 
-// widthNeeded returns the number of characters needed to print count in base 10. Every caller passes a non-negative
-// month or day-of-month count, for which this is simply the number of decimal digits.
-func widthNeeded(count int) int {
-	return len(strconv.Itoa(count))
+func widthNeeded(num int) int {
+	return len(strconv.Itoa(num))
 }
 
 // TextCalendarMonth writes a text representation of the month.
@@ -281,10 +314,11 @@ func (date Date) TextCalendarMonth(w io.Writer) {
 
 func (date Date) textCalendarMonth(w io.Writer, width int) {
 	cal := date.calendar()
+	cfg := cal.config()
 	year, month, _, maximum := date.resolve()
-	fmt.Fprintf(w, "%d: %s", month, cal.Months[month-1].Name)
-	lastDayOfWeek := len(cal.WeekDays) - 1
-	for i, weekday := range cal.WeekDays {
+	fmt.Fprintf(w, "%d: %s", month, cfg.Months[month-1].Name)
+	lastDayOfWeek := len(cfg.WeekDays) - 1
+	for i, weekday := range cfg.WeekDays {
 		if i == 0 {
 			fmt.Fprint(w, "\n")
 		} else {
@@ -293,19 +327,16 @@ func (date Date) textCalendarMonth(w io.Writer, width int) {
 		fmt.Fprint(w, strings.Repeat(" ", width-1))
 		fmt.Fprint(w, xstrings.FirstN(weekday, 1))
 	}
-	// Consecutive days differ only by one in Days, so derive the first day once and increment rather than rebuilding a
-	// fresh Date (with its year convergence and month summation) for every day of the month.
-	firstDay := cal.MustNewDate(month, 1, year).Days
-	numFmt := fmt.Sprintf("%%%dd", width)
+	firstDay := cal.MustNewDate(month, 1, year)
 	for i := 1; i <= maximum; i++ {
-		weekDay := Date{Days: firstDay + i - 1, cal: cal}.WeekDay()
+		weekDay := firstDay.Add(i - 1).WeekDay()
 		if i == 1 || weekDay == 0 {
 			fmt.Fprint(w, "\n")
 		}
 		if i == 1 && weekDay != 0 {
 			fmt.Fprint(w, strings.Repeat(" ", weekDay*(width+1)))
 		}
-		fmt.Fprintf(w, numFmt, i)
+		fmt.Fprintf(w, "%[1]*d", width, i)
 		if weekDay != lastDayOfWeek {
 			fmt.Fprint(w, " ")
 		}
