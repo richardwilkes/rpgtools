@@ -34,6 +34,20 @@ func TestSimple(t *testing.T) {
 	c.True(exists, "expecting to find 'bB' in: %v", counts)
 }
 
+func TestSimpleBuildsCumulativeWeightedSteps(t *testing.T) {
+	c := check.New(t)
+	// SimpleNamer stores its weighted names in the same weightedStep[string] the Markov namers use, rather than a
+	// bespoke pair type. Building from a set with distinct counts must yield those names in sorted order, each paired
+	// with the running cumulative weight (so the final entry holds the grand total) -- the exact shape pickWeighted
+	// consumes.
+	s := NewSimpleNamer(map[string]int{"coral": 3, "amber": 2, "ivory": 1}, false, false)
+	c.Equal([]weightedStep[string]{
+		{step: "amber", last: 2},
+		{step: "coral", last: 5},
+		{step: "ivory", last: 6},
+	}, s.data)
+}
+
 func TestSimpleReproducibleAcrossBuilds(t *testing.T) {
 	c := check.New(t)
 	// Go randomizes map iteration order on every range, so rebuilding a SimpleNamer from identical data exercises

@@ -136,8 +136,8 @@ func TestWeightsSaturateWithoutOverflow(t *testing.T) {
 	// (positive and well within int64 range). Before this, summing two int-max weights overflowed to a negative total,
 	// which made pickWeighted give up and return "" for entirely valid data.
 	simple := NewSimpleNamer(map[string]int{"aaa": maxInt, "bbb": maxInt}, false, false)
-	c.Equal(int64(maxWeight), simple.data[0].cumulative)                    // first name's own weight, capped
-	c.Equal(int64(maxWeight)*2, simple.data[len(simple.data)-1].cumulative) // grand total, summed as int64
+	c.Equal(int64(maxWeight), simple.data[0].last)                    // first name's own weight, capped
+	c.Equal(int64(maxWeight)*2, simple.data[len(simple.data)-1].last) // grand total, summed as int64
 	c.True(simple.GenerateNameWithRandomizer(constRand(0)) != "", "valid data must still produce a name")
 
 	// MarkovLetterNamer: a transition weight built from an enormous count saturates the same way, and the int64
@@ -155,16 +155,16 @@ func TestUnweightedConstructorsCountDuplicates(t *testing.T) {
 	// entry, which is what a naive []string -> map adapter would do.
 	simple := NewSimpleUnweightedNamer([]string{"alice", "alice", "bob"}, false, false)
 	// The last entry's cumulative weight is the grand total: 1 each for the two alices and bob.
-	c.Equal(int64(3), simple.data[len(simple.data)-1].cumulative)
+	c.Equal(int64(3), simple.data[len(simple.data)-1].last)
 	// Each entry's own weight is its cumulative minus the previous one; the two "alice" occurrences sum to 2 rather
 	// than collapsing to a single entry of weight 1.
 	aliceCount := int64(0)
 	prev := int64(0)
-	for _, nc := range simple.data {
-		if nc.name == "alice" {
-			aliceCount += nc.cumulative - prev
+	for _, ws := range simple.data {
+		if ws.step == "alice" {
+			aliceCount += ws.last - prev
 		}
-		prev = nc.cumulative
+		prev = ws.last
 	}
 	c.Equal(int64(2), aliceCount)
 

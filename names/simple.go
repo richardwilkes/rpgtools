@@ -19,16 +19,9 @@ import (
 
 var _ Namer = &SimpleNamer{}
 
-// nameCount pairs a name with the running cumulative weight through it (the prior entries' weights plus its own), which
-// is the form pickWeighted consumes; the last entry's value is therefore the grand total.
-type nameCount struct {
-	name       string
-	cumulative int64
-}
-
 // SimpleNamer provides a name generator that selects a name from the weighted set of names provided to it.
 type SimpleNamer struct {
-	data         []nameCount
+	data         []weightedStep[string]
 	lowered      bool
 	firstToUpper bool
 }
@@ -58,8 +51,8 @@ func newSimpleNamer(data iter.Seq2[string, int], lowered, firstToUpper bool) *Si
 		}
 	}
 	return &SimpleNamer{
-		data: cumulativeWeights(counts, func(name string, cumulative int64) nameCount {
-			return nameCount{name: name, cumulative: cumulative}
+		data: cumulativeWeights(counts, func(name string, cumulative int64) weightedStep[string] {
+			return weightedStep[string]{step: name, last: cumulative}
 		}),
 		lowered:      lowered,
 		firstToUpper: firstToUpper,
@@ -73,8 +66,8 @@ func (n *SimpleNamer) GenerateName() string {
 
 // GenerateNameWithRandomizer generates a new random name using the specified randomizer.
 func (n *SimpleNamer) GenerateNameWithRandomizer(rnd xrand.Randomizer) string {
-	if e, ok := pickWeighted(n.data, rnd, func(e nameCount) int64 { return e.cumulative }); ok {
-		return applyCase(e.name, n.lowered, n.firstToUpper)
+	if e, ok := pickWeighted(n.data, rnd, func(e weightedStep[string]) int64 { return e.last }); ok {
+		return applyCase(e.step, n.lowered, n.firstToUpper)
 	}
 	return ""
 }

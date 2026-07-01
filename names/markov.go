@@ -18,8 +18,9 @@ import (
 	"github.com/richardwilkes/toolbox/v2/xrand"
 )
 
-// weightedStep pairs a generated step with the running cumulative weight through it (the prior steps' weights plus its
-// own), which is the form pickWeighted consumes; the last entry for a key therefore holds that key's grand total.
+// weightedStep pairs a step (for SimpleNamer, a whole name) with the running cumulative weight through it (the prior
+// steps' weights plus its own), which is the form pickWeighted consumes; the last entry in a slice therefore holds that
+// slice's grand total.
 type weightedStep[S cmp.Ordered] struct {
 	step S
 	last int64
