@@ -27,9 +27,20 @@ type Dice struct {
 	Multiplier int
 }
 
+func (dice Dice) normalize() Dice {
+	if dice.Count < 1 || dice.Sides < 1 {
+		dice.Count = 0
+		dice.Sides = 0
+	}
+	if dice.Multiplier < 1 || (dice.Count == 0 && dice.Modifier == 0) {
+		dice.Multiplier = 1
+	}
+	return dice
+}
+
 // MarshalText implements the encoding.TextMarshaler interface.
 func (dice Dice) MarshalText() (text []byte, err error) {
-	return []byte(dice.format(DefaultConfig().GURPSFormat)), nil
+	return []byte(dice.normalize().format(DefaultConfig().GURPSFormat)), nil
 }
 
 func (dice Dice) format(gurpsFormat bool) string {
@@ -104,10 +115,7 @@ func parseDice(in string, maxCount, maxSides, maxModifier, maxMultiplier int) Di
 	if isMultiplier(rune(ch)) {
 		dice.Multiplier, _ = extractValue(in, i, maxMultiplier)
 	}
-	if dice.Multiplier == 0 {
-		dice.Multiplier = 1
-	}
-	return dice
+	return dice.normalize()
 }
 
 // Hash writes this object's contents into the hasher.

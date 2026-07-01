@@ -91,14 +91,7 @@ func (r *Roller) Normalize(dice Dice) Dice {
 	dice.Sides = min(max(dice.Sides, 0), r.cfg.MaxSides)
 	dice.Modifier = min(max(dice.Modifier, -r.cfg.MaxModifier), r.cfg.MaxModifier)
 	dice.Multiplier = min(max(dice.Multiplier, 1), r.cfg.MaxMultiplier)
-	if dice.Count == 0 || dice.Sides == 0 {
-		dice.Count = 0
-		dice.Sides = 0
-	}
-	if dice.Count == 0 && dice.Modifier == 0 {
-		dice.Multiplier = 1
-	}
-	return dice
+	return dice.normalize()
 }
 
 // ApplyExtraDiceFromModifiers returns the Dice as if the ExtraDiceFromModifiers configuration option had been applied

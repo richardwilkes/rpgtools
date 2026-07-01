@@ -180,6 +180,41 @@ func TestStringRoundTrip(t *testing.T) {
 	}
 }
 
+func TestMarshalTextRoundTrip(t *testing.T) {
+	c := check.New(t)
+	// MarshalText normalizes the receiver before formatting, so a Dice with a degenerate field -- an orphan Sides or
+	// Count, or a Multiplier <= 0 that the text grammar cannot express -- marshals to its normalized form and reparses
+	// back to that same Dice. Each row pairs the expected text with the raw input that must marshal to it and the Dice
+	// that text must unmarshal to; re-marshaling the reparsed Dice must reproduce the text, proving a stable
+	// round-trip.
+	for i, one := range []struct {
+		Text     string
+		In       dice.Dice
+		Reparsed dice.Dice
+	}{
+		{"3", dice.Dice{Count: 0, Sides: 6, Modifier: 3, Multiplier: 1}, dice.Dice{Modifier: 3, Multiplier: 1}},                           // 0 - orphan sides dropped
+		{"3", dice.Dice{Count: 0, Sides: 6, Modifier: 3, Multiplier: 0}, dice.Dice{Modifier: 3, Multiplier: 1}},                           // 1 - orphan sides with a zero multiplier
+		{"d6", dice.Dice{Count: 1, Sides: 6, Modifier: 0, Multiplier: 0}, dice.Dice{Count: 1, Sides: 6, Multiplier: 1}},                   // 2 - zero multiplier on a real die
+		{"2", dice.Dice{Count: 3, Sides: 0, Modifier: 2, Multiplier: 1}, dice.Dice{Modifier: 2, Multiplier: 1}},                           // 3 - orphan count dropped
+		{"2d6+3", dice.Dice{Count: 2, Sides: 6, Modifier: 3, Multiplier: -5}, dice.Dice{Count: 2, Sides: 6, Modifier: 3, Multiplier: 1}},  // 4 - negative multiplier
+		{"0", dice.Dice{Count: 0, Sides: 0, Modifier: 0, Multiplier: 0}, dice.Dice{Multiplier: 1}},                                        // 5 - fully empty
+		{"2d6+3x4", dice.Dice{Count: 2, Sides: 6, Modifier: 3, Multiplier: 4}, dice.Dice{Count: 2, Sides: 6, Modifier: 3, Multiplier: 4}}, // 6 - well-formed, unchanged
+	} {
+		desc := fmt.Sprintf("Table index %d: %+v", i, one.In)
+		text, err := one.In.MarshalText()
+		c.NoError(err, desc)
+		c.Equal(one.Text, string(text), desc)
+
+		var back dice.Dice
+		c.NoError(back.UnmarshalText(text), desc)
+		c.Equal(one.Reparsed, back, desc)
+
+		reText, err := back.MarshalText()
+		c.NoError(err, desc)
+		c.Equal(one.Text, string(reText), desc)
+	}
+}
+
 func TestNoDiceCanonicalizesToModifier(t *testing.T) {
 	c := check.New(t)
 	r := newRoller(c, nil, false, false)
