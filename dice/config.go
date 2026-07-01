@@ -40,6 +40,8 @@ var (
 
 // Config holds various configuration options Dice.
 type Config struct {
+	// Randomizer is the source of randomness to use when rolling dice. When Clone() is called, it is copied by
+	// reference, so the same Randomizer is used in both the original and the clone.
 	Randomizer    xrand.Randomizer
 	MaxCount      int
 	MaxSides      int
