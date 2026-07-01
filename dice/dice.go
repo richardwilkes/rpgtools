@@ -14,7 +14,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"hash"
-	"math"
 	"strconv"
 	"strings"
 	"unicode"
@@ -64,7 +63,7 @@ func (dice Dice) format(gurpsFormat bool) string {
 
 // UnmarshalText implements the encoding.TextUnmarshaler interface.
 func (dice *Dice) UnmarshalText(text []byte) error {
-	*dice = parseDice(string(text), math.MaxInt, math.MaxInt, math.MaxInt, math.MaxInt)
+	*dice = parseDice(string(text), maxFieldValue, maxFieldValue, maxFieldValue, maxFieldValue)
 	return nil
 }
 

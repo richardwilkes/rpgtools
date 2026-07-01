@@ -319,26 +319,28 @@ func TestExtractValueOverflow(t *testing.T) {
 func TestUnmarshalTextCapsOversizedNumbers(t *testing.T) {
 	c := check.New(t)
 	const huge = "99999999999999999999" // 20 nines: larger than math.MaxInt
-	// Regression: UnmarshalText caps each field at math.MaxInt. extractValue must reach that cap without overflowing an
-	// int along the way; previously value*10 wrapped past math.MaxInt and the cap check never fired, storing a garbage
-	// (and sometimes negative) value instead. Each field must end up exactly at the cap, never negative.
+	const fieldCap = math.MaxInt - 1    // UnmarshalText parses against maxFieldValue, one below math.MaxInt
+	// Regression: UnmarshalText caps each field at maxFieldValue. extractValue must reach that cap without overflowing
+	// an int along the way; previously value*10 wrapped past math.MaxInt and the cap check never fired, storing a
+	// garbage (and sometimes negative) value instead. Each field must end up exactly at the cap, never negative and
+	// never at the bare math.MaxInt that would let a later sides+1 intermediate wrap.
 	var d dice.Dice
 	c.NoError(d.UnmarshalText([]byte(huge + "d6")))
-	c.Equal(math.MaxInt, d.Count)
+	c.Equal(fieldCap, d.Count)
 	c.Equal(6, d.Sides)
 
 	c.NoError(d.UnmarshalText([]byte("3d" + huge)))
 	c.Equal(3, d.Count)
-	c.Equal(math.MaxInt, d.Sides)
+	c.Equal(fieldCap, d.Sides)
 
 	c.NoError(d.UnmarshalText([]byte("d6+" + huge)))
-	c.Equal(math.MaxInt, d.Modifier)
+	c.Equal(fieldCap, d.Modifier)
 
 	c.NoError(d.UnmarshalText([]byte("d6-" + huge)))
-	c.Equal(-math.MaxInt, d.Modifier)
+	c.Equal(-fieldCap, d.Modifier)
 
 	c.NoError(d.UnmarshalText([]byte("2d6x" + huge)))
-	c.Equal(math.MaxInt, d.Multiplier)
+	c.Equal(fieldCap, d.Multiplier)
 }
 
 // bigEvenAdjust independently computes the even-sided modifier-to-extra-dice conversion using arbitrary-precision math,

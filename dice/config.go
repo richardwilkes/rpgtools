@@ -19,6 +19,12 @@ import (
 	"github.com/richardwilkes/toolbox/v2/xreflect"
 )
 
+// maxFieldValue is the largest value permitted for any of a Config's Max* fields. It sits one below math.MaxInt so the
+// overflow checks -- and computeExtraDice, which forms a sides+1 intermediate from MaxSides -- can add 1 to a field
+// value without that addition itself wrapping. With the fields bounded this way, equationOverflows always sees the true
+// values and reliably detects a real overflow instead of being handed one that has already wrapped negative.
+const maxFieldValue = math.MaxInt - 1
+
 var (
 	defaultConfigLock sync.RWMutex
 	defaultConfig     = &Config{
@@ -82,14 +88,26 @@ func (c *Config) Valid() error {
 	if c.MaxCount < 1 {
 		return errs.New("MaxCount may not be less than 1")
 	}
+	if c.MaxCount > maxFieldValue {
+		return errs.Newf("MaxCount may not be greater than %d", maxFieldValue)
+	}
 	if c.MaxSides < 2 {
 		return errs.New("MaxSides may not be less than 2")
+	}
+	if c.MaxSides > maxFieldValue {
+		return errs.Newf("MaxSides may not be greater than %d", maxFieldValue)
 	}
 	if c.MaxModifier < 0 {
 		return errs.New("MaxModifier may not be less than 0")
 	}
+	if c.MaxModifier > maxFieldValue {
+		return errs.Newf("MaxModifier may not be greater than %d", maxFieldValue)
+	}
 	if c.MaxMultiplier < 1 {
 		return errs.New("MaxMultiplier may not be less than 1")
+	}
+	if c.MaxMultiplier > maxFieldValue {
+		return errs.Newf("MaxMultiplier may not be greater than %d", maxFieldValue)
 	}
 	if c.equationOverflows() {
 		return errs.New("max values may cause an overflow")
@@ -101,11 +119,12 @@ func (c *Config) Valid() error {
 //
 //	value = (c.MaxCount*c.MaxSides + c.MaxModifier) * c.MaxMultiplier
 //
-// would overflow an int (while also accounting for the c.ExtraDiceFromModifiers flag). It assumes the ranges the Dice
-// fields are clamped to: c.MaxCount >= 1, c.MaxSides is >= 2, and c.MaxMultiplier is >= 1, so c.MaxCount*c.MaxSides is
-// non-negative and can only overflow past math.MaxInt. Adding c.MaxModifier (which may be negative) can only overflow
-// on the high side, since the product is non-negative and so the sum stays >= c.MaxModifier >= math.MinInt. The
-// resulting sum may be negative, so the final multiply by c.MaxMultiplier is checked against both math.MaxInt and
+// would overflow an int (while also accounting for the c.ExtraDiceFromModifiers flag). It assumes the ranges Valid()
+// enforces before calling it: every Max* field is <= maxFieldValue, c.MaxCount >= 1, c.MaxSides is >= 2, and
+// c.MaxMultiplier is >= 1, so c.MaxCount*c.MaxSides is non-negative and can only overflow past math.MaxInt, and the
+// sides+1 intermediates computeExtraDice and Average form cannot themselves wrap. Adding c.MaxModifier can only
+// overflow on the high side, since the product is non-negative and so the sum stays >= c.MaxModifier >= math.MinInt.
+// The resulting sum may be negative, so the final multiply by c.MaxMultiplier is checked against both math.MaxInt and
 // math.MinInt; because c.MaxMultiplier is >= 1, the bound on the wrong side of zero is never crossed. Each step is
 // checked in Go's evaluation order, so an intermediate result overflowing is caught even when the final value would
 // have been representable. Average forms a slightly larger intermediate than the equation above -- count*(sides+1)
@@ -129,8 +148,8 @@ func (c *Config) equationOverflows() bool {
 	product := count * c.MaxSides
 	// Average evaluates count*(sides+1) -- that is, product + count -- before halving, so the product must leave room
 	// to add count back without overflowing. count is >= 1 here (MaxCount is >= 1 and the ExtraDiceFromModifiers
-	// adjustment only adds to it), so this also rejects a MaxSides of math.MaxInt, where the sides+1 term itself would
-	// wrap.
+	// adjustment only adds to it). Valid() caps every Max* field at maxFieldValue before this runs, so the sides+1 that
+	// computeExtraDice forms above -- and count*(sides+1) here -- cannot themselves wrap.
 	if product > math.MaxInt-count {
 		return true
 	}
