@@ -128,6 +128,17 @@ func TestPickWeightedSkipsZeroWeightEntries(t *testing.T) {
 	c.Equal(map[string]bool{"a": true, "b": true}, picked)
 }
 
+func TestAddWeightSaturates(t *testing.T) {
+	c := check.New(t)
+	// addWeight caps each delta at maxWeight (via the builtin min) and saturates the running total there, so no
+	// accumulation can exceed the ceiling or overflow a platform int. A negative delta passes through unchanged.
+	c.Equal(5, addWeight(2, 3))                         // ordinary addition, well under the ceiling
+	c.Equal(maxWeight, addWeight(0, maxWeight+1))       // a single oversized delta is capped to the ceiling
+	c.Equal(maxWeight, addWeight(maxWeight, 1))         // a ceiling sum plus more stays at the ceiling
+	c.Equal(maxWeight, addWeight(maxWeight, maxWeight)) // two ceiling weights saturate rather than overflow
+	c.Equal(maxWeight-1, addWeight(maxWeight, -1))      // a negative delta is left as-is (min keeps it)
+}
+
 func TestWeightsSaturateWithoutOverflow(t *testing.T) {
 	c := check.New(t)
 	const maxInt = int(^uint(0) >> 1) // the platform int maximum, far beyond the maxWeight ceiling

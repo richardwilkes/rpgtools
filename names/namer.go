@@ -26,19 +26,11 @@ import (
 // are or how many entries are summed: even four billion maximum-weight entries stay within int64.
 const maxWeight = math.MaxInt32
 
-// clampWeight saturates a single weight at maxWeight. A negative input is returned unchanged; callers drop non-positive
-// counts before they reach a weighted table.
-func clampWeight(w int) int {
-	if w > maxWeight {
-		return maxWeight
-	}
-	return w
-}
-
-// addWeight returns sum + delta saturated at maxWeight. delta is clamped first, so even a pathologically large count
-// can neither push an accumulated weight past the ceiling nor overflow a platform int.
+// addWeight returns sum + delta saturated at maxWeight. delta is capped at maxWeight first (a negative delta passes
+// through unchanged, since callers drop non-positive counts before they reach a weighted table), so even a
+// pathologically large count can neither push an accumulated weight past the ceiling nor overflow a platform int.
 func addWeight(sum, delta int) int {
-	delta = clampWeight(delta)
+	delta = min(delta, maxWeight)
 	if sum > maxWeight-delta {
 		return maxWeight
 	}
