@@ -12,11 +12,18 @@ package calendar
 
 import (
 	"fmt"
+	"math"
 	"slices"
 	"strings"
 
 	"github.com/richardwilkes/toolbox/v2/errs"
 )
+
+// maxDaysPerYear bounds the total number of days a year may contain: the sum of every month's Days. The date
+// arithmetic multiplies the days-per-year by a year magnitude of up to math.MaxInt32 (the widest span isValidYear
+// permits), so keeping the sum at or below this value guarantees those products -- and the leap-day counts layered on
+// top -- stay within an int rather than overflowing and silently corrupting the resulting date.
+const maxDaysPerYear = math.MaxInt32
 
 var (
 	absalom   = newPathfinderCalendar("AR")
@@ -136,6 +143,7 @@ func (c *Config) Valid() error {
 	if len(c.Months) == 0 {
 		return errs.New("must have at least one month")
 	}
+	totalDays := 0
 	for i := range c.Months {
 		if c.Months[i].Name == "" {
 			return errs.New("month names must not be empty")
@@ -146,6 +154,14 @@ func (c *Config) Valid() error {
 		if c.Months[i].Days < 1 {
 			return errs.New("months must contain at least 1 day")
 		}
+		// Cap the running total of days per year. yearToDaysWith and NewDate multiply this sum by a year magnitude of
+		// up to math.MaxInt32, so a larger sum would overflow an int and silently corrupt every date. The check is
+		// written against the remaining budget so a single huge Days value cannot itself overflow the sum before the
+		// limit is caught.
+		if c.Months[i].Days > maxDaysPerYear-totalDays {
+			return errs.Newf("the total number of days across all months may not exceed %d", maxDaysPerYear)
+		}
+		totalDays += c.Months[i].Days
 	}
 	if c.LeapYear != nil {
 		if c.LeapYear.Month < 1 || c.LeapYear.Month > len(c.Months) {
