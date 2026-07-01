@@ -41,7 +41,8 @@ const abbreviatedNameLength = 3
 
 // Calendar holds the data for a calendar.
 type Calendar struct {
-	cfg *Config
+	cfg            *Config
+	minDaysPerYear int // sum of every month's Days; a pure function of the immutable cfg, cached at construction
 }
 
 // New creates a new Calendar from the given Config.
@@ -49,7 +50,18 @@ func New(cfg *Config) (*Calendar, error) {
 	if err := cfg.Valid(); err != nil {
 		return nil, err
 	}
-	return &Calendar{cfg: cfg.Clone()}, nil
+	return newCalendar(cfg.Clone()), nil
+}
+
+// newCalendar wraps an already-validated (or built-in) Config, precomputing minDaysPerYear so Year and the date
+// accessors that lean on it do not re-sum every month on each call. The cfg is taken as-is and not cloned again;
+// callers pass a Config they own (New clones first, the built-ins pass a fresh literal).
+func newCalendar(cfg *Config) *Calendar {
+	c := &Calendar{cfg: cfg}
+	for i := range cfg.Months {
+		c.minDaysPerYear += cfg.Months[i].Days
+	}
+	return c
 }
 
 // Default returns the default Calendar that will be used if one isn't explicitly used (for example, if you create a
@@ -253,14 +265,14 @@ func (c *Calendar) resolveEraSuffix(year int, yearText, eraText string) (int, er
 	return year, nil
 }
 
-// MinDaysPerYear returns the minimum number of days in a year.
+// MinDaysPerYear returns the minimum number of days in a year. The sum is computed once when the Calendar is built (see
+// newCalendar) and cached, since it is a pure function of the immutable Config yet is consulted on every Year lookup
+// and date resolution.
 func (c *Calendar) MinDaysPerYear() int {
-	cfg := c.config()
-	days := 0
-	for _, month := range cfg.Months {
-		days += month.Days
+	if c != nil && c.cfg != nil {
+		return c.minDaysPerYear
 	}
-	return days
+	return Default().minDaysPerYear
 }
 
 // maxDaysInMonth returns the largest number of days the given 1-based month can hold, including the extra day the leap

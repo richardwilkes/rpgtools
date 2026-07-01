@@ -28,35 +28,33 @@ const maxDaysPerYear = math.MaxInt32
 var (
 	absalom   = newPathfinderCalendar("AR")
 	imperial  = newPathfinderCalendar("IC")
-	gregorian = &Calendar{
-		cfg: &Config{
-			DayZeroWeekDay: 1,
-			WeekDays:       []string{"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"},
-			Months: []Month{
-				{Name: "January", Days: 31},
-				{Name: "February", Days: 28},
-				{Name: "March", Days: 31},
-				{Name: "April", Days: 30},
-				{Name: "May", Days: 31},
-				{Name: "June", Days: 30},
-				{Name: "July", Days: 31},
-				{Name: "August", Days: 31},
-				{Name: "September", Days: 30},
-				{Name: "October", Days: 31},
-				{Name: "November", Days: 30},
-				{Name: "December", Days: 31},
-			},
-			Seasons: []Season{
-				{Name: "Winter", StartMonth: 11, StartDay: 1, EndMonth: 2, EndDay: 28},
-				{Name: "Spring", StartMonth: 3, StartDay: 1, EndMonth: 5, EndDay: 31},
-				{Name: "Summer", StartMonth: 6, StartDay: 1, EndMonth: 8, EndDay: 31},
-				{Name: "Fall", StartMonth: 9, StartDay: 1, EndMonth: 10, EndDay: 31},
-			},
-			Era:         "AD",
-			PreviousEra: "BC",
-			LeapYear:    &LeapYear{Month: 2, Every: 4, Except: 100, Unless: 400},
+	gregorian = newCalendar(&Config{
+		DayZeroWeekDay: 1,
+		WeekDays:       []string{"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"},
+		Months: []Month{
+			{Name: "January", Days: 31},
+			{Name: "February", Days: 28},
+			{Name: "March", Days: 31},
+			{Name: "April", Days: 30},
+			{Name: "May", Days: 31},
+			{Name: "June", Days: 30},
+			{Name: "July", Days: 31},
+			{Name: "August", Days: 31},
+			{Name: "September", Days: 30},
+			{Name: "October", Days: 31},
+			{Name: "November", Days: 30},
+			{Name: "December", Days: 31},
 		},
-	}
+		Seasons: []Season{
+			{Name: "Winter", StartMonth: 11, StartDay: 1, EndMonth: 2, EndDay: 28},
+			{Name: "Spring", StartMonth: 3, StartDay: 1, EndMonth: 5, EndDay: 31},
+			{Name: "Summer", StartMonth: 6, StartDay: 1, EndMonth: 8, EndDay: 31},
+			{Name: "Fall", StartMonth: 9, StartDay: 1, EndMonth: 10, EndDay: 31},
+		},
+		Era:         "AD",
+		PreviousEra: "BC",
+		LeapYear:    &LeapYear{Month: 2, Every: 4, Except: 100, Unless: 400},
+	})
 )
 
 // Season defines a seasonal period in the calendar. A season is positional within a year and ignores the year itself. A
@@ -257,40 +255,38 @@ func PathfinderImperialCalendar() *Calendar {
 // era name (the same name serves as both the current and previous era). Each call returns an independent Calendar built
 // from fresh component slices.
 func newPathfinderCalendar(era string) *Calendar {
-	return &Calendar{
-		cfg: &Config{
-			WeekDays: []string{
-				"Moonday",
-				"Toilday",
-				"Wealday",
-				"Oathday",
-				"Fireday",
-				"Starday",
-				"Sunday",
-			},
-			Months: []Month{
-				{Name: "Abadius", Days: 31},
-				{Name: "Calistril", Days: 28},
-				{Name: "Pharast", Days: 31},
-				{Name: "Gozran", Days: 30},
-				{Name: "Desnus", Days: 31},
-				{Name: "Sarenith", Days: 30},
-				{Name: "Erastus", Days: 31},
-				{Name: "Arodus", Days: 31},
-				{Name: "Rova", Days: 30},
-				{Name: "Lamashan", Days: 31},
-				{Name: "Neth", Days: 30},
-				{Name: "Kuthona", Days: 31},
-			},
-			Seasons: []Season{
-				{Name: "Winter", StartMonth: 11, StartDay: 1, EndMonth: 2, EndDay: 28},
-				{Name: "Spring", StartMonth: 3, StartDay: 1, EndMonth: 5, EndDay: 31},
-				{Name: "Summer", StartMonth: 6, StartDay: 1, EndMonth: 8, EndDay: 31},
-				{Name: "Fall", StartMonth: 9, StartDay: 1, EndMonth: 10, EndDay: 31},
-			},
-			Era:         era,
-			PreviousEra: era,
-			LeapYear:    &LeapYear{Month: 2, Every: 8},
+	return newCalendar(&Config{
+		WeekDays: []string{
+			"Moonday",
+			"Toilday",
+			"Wealday",
+			"Oathday",
+			"Fireday",
+			"Starday",
+			"Sunday",
 		},
-	}
+		Months: []Month{
+			{Name: "Abadius", Days: 31},
+			{Name: "Calistril", Days: 28},
+			{Name: "Pharast", Days: 31},
+			{Name: "Gozran", Days: 30},
+			{Name: "Desnus", Days: 31},
+			{Name: "Sarenith", Days: 30},
+			{Name: "Erastus", Days: 31},
+			{Name: "Arodus", Days: 31},
+			{Name: "Rova", Days: 30},
+			{Name: "Lamashan", Days: 31},
+			{Name: "Neth", Days: 30},
+			{Name: "Kuthona", Days: 31},
+		},
+		Seasons: []Season{
+			{Name: "Winter", StartMonth: 11, StartDay: 1, EndMonth: 2, EndDay: 28},
+			{Name: "Spring", StartMonth: 3, StartDay: 1, EndMonth: 5, EndDay: 31},
+			{Name: "Summer", StartMonth: 6, StartDay: 1, EndMonth: 8, EndDay: 31},
+			{Name: "Fall", StartMonth: 9, StartDay: 1, EndMonth: 10, EndDay: 31},
+		},
+		Era:         era,
+		PreviousEra: era,
+		LeapYear:    &LeapYear{Month: 2, Every: 8},
+	})
 }

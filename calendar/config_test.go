@@ -24,6 +24,37 @@ func TestValidPrefabs(t *testing.T) {
 	c.NoError(calendar.PathfinderImperialCalendar().Config().Valid())
 }
 
+func TestMinDaysPerYearMatchesMonthSum(t *testing.T) {
+	c := check.New(t)
+	// MinDaysPerYear is summed once when the Calendar is built and cached (it is a pure function of the immutable
+	// Config). For every construction path -- the built-ins and New -- the cached value must equal the live sum of
+	// every month's Days, so the cache can never drift from the Config it was built from.
+	assertSum := func(cal *calendar.Calendar) {
+		want := 0
+		for _, m := range cal.Config().Months {
+			want += m.Days
+		}
+		c.Equal(want, cal.MinDaysPerYear())
+	}
+	c.Equal(365, calendar.Gregorian().MinDaysPerYear())
+	assertSum(calendar.Gregorian())
+	assertSum(calendar.PathfinderAbsalomReckoning())
+	assertSum(calendar.PathfinderImperialCalendar())
+
+	custom, err := calendar.New(&calendar.Config{
+		WeekDays:       []string{"A", "B"},
+		DayZeroWeekDay: 0,
+		Months: []calendar.Month{
+			{Name: "M1", Days: 10},
+			{Name: "M2", Days: 20},
+			{Name: "M3", Days: 33},
+		},
+	})
+	c.NoError(err)
+	c.Equal(63, custom.MinDaysPerYear())
+	assertSum(custom)
+}
+
 func TestConfigBoundsTotalDaysPerYear(t *testing.T) {
 	c := check.New(t)
 
