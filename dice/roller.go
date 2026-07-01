@@ -29,17 +29,25 @@ func NewRoller(cfg *Config) (*Roller, error) {
 
 // Config returns a clone of this Roller's Config.
 func (r *Roller) Config() *Config {
-	return r.cfg.Clone()
+	return r.config().Clone()
+}
+
+func (r *Roller) config() *Config {
+	if r != nil && r.cfg != nil {
+		return r.cfg
+	}
+	return DefaultConfig()
 }
 
 // Format a Dice for display.
 func (r *Roller) Format(dice Dice) string {
-	return r.prepare(dice).format(r.cfg.GURPSFormat)
+	return r.prepare(dice).format(r.config().GURPSFormat)
 }
 
 // Parse a dice string in the form 3d6+1x2 and turns it into a Dice.
 func (r *Roller) Parse(spec string) Dice {
-	return r.Normalize(parseDice(spec, r.cfg.MaxCount, r.cfg.MaxSides, r.cfg.MaxModifier, r.cfg.MaxMultiplier))
+	cfg := r.config()
+	return r.Normalize(parseDice(spec, cfg.MaxCount, cfg.MaxSides, cfg.MaxModifier, cfg.MaxMultiplier))
 }
 
 func nextChar(in string, inPos int) (ch byte, outPos int) {
@@ -76,8 +84,9 @@ func (r *Roller) Roll(dice Dice) int {
 	result := dice.Modifier
 	switch {
 	case dice.Sides > 1:
+		cfg := r.config()
 		for range dice.Count {
-			result += 1 + r.cfg.Randomizer.Intn(dice.Sides)
+			result += 1 + cfg.Randomizer.Intn(dice.Sides)
 		}
 	case dice.Sides == 1:
 		result += dice.Count
@@ -87,10 +96,11 @@ func (r *Roller) Roll(dice Dice) int {
 
 // Normalize the provided Dice, ensuring all values are within permitted ranges, and return the modified copy.
 func (r *Roller) Normalize(dice Dice) Dice {
-	dice.Count = min(max(dice.Count, 0), r.cfg.MaxCount)
-	dice.Sides = min(max(dice.Sides, 0), r.cfg.MaxSides)
-	dice.Modifier = min(max(dice.Modifier, -r.cfg.MaxModifier), r.cfg.MaxModifier)
-	dice.Multiplier = min(max(dice.Multiplier, 1), r.cfg.MaxMultiplier)
+	cfg := r.config()
+	dice.Count = min(max(dice.Count, 0), cfg.MaxCount)
+	dice.Sides = min(max(dice.Sides, 0), cfg.MaxSides)
+	dice.Modifier = min(max(dice.Modifier, -cfg.MaxModifier), cfg.MaxModifier)
+	dice.Multiplier = min(max(dice.Multiplier, 1), cfg.MaxMultiplier)
 	return dice.normalize()
 }
 
@@ -100,13 +110,13 @@ func (r *Roller) Normalize(dice Dice) Dice {
 func (r *Roller) ApplyExtraDiceFromModifiers(dice Dice) Dice {
 	dice = r.Normalize(dice)
 	var adjustment int
-	adjustment, dice.Modifier = computeExtraDice(dice.Sides, dice.Modifier, r.cfg.MaxCount-dice.Count)
+	adjustment, dice.Modifier = computeExtraDice(dice.Sides, dice.Modifier, r.config().MaxCount-dice.Count)
 	dice.Count += adjustment
 	return dice
 }
 
 func (r *Roller) prepare(dice Dice) Dice {
-	if r.cfg.ExtraDiceFromModifiers {
+	if r.config().ExtraDiceFromModifiers {
 		return r.ApplyExtraDiceFromModifiers(dice)
 	}
 	return r.Normalize(dice)
