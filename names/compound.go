@@ -46,7 +46,7 @@ func NewCompoundNamer(separator string, lowered, firstToUpper bool, namers ...Na
 
 // GenerateName generates a new random name.
 func (n *CompoundNamer) GenerateName() string {
-	return n.GenerateNameWithRandomizer(xrand.New())
+	return generateName(n)
 }
 
 // GenerateNameWithRandomizer generates a new random name using the specified randomizer.

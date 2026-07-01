@@ -45,6 +45,12 @@ type Namer interface {
 	GenerateNameWithRandomizer(rnd xrand.Randomizer) string
 }
 
+// generateName produces a name from n using a fresh default randomizer. Every Namer implementation's GenerateName
+// delegates here so the choice of default randomizer (xrand.New) lives in one place instead of being repeated in each.
+func generateName(n Namer) string {
+	return n.GenerateNameWithRandomizer(xrand.New())
+}
+
 // applyCase applies the optional case transformations shared by every namer: lower-casing the whole result and/or
 // upper-casing its first letter.
 func applyCase(in string, lowered, firstToUpper bool) string {

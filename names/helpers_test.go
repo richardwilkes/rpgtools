@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/richardwilkes/toolbox/v2/check"
+	"github.com/richardwilkes/toolbox/v2/xrand"
 )
 
 // constRand is a deterministic Randomizer whose Intn always returns the same value (clamped to a valid index), letting
@@ -53,6 +54,42 @@ func TestApplyCase(t *testing.T) {
 	c.Equal("hello", applyCase("hELLo", true, false))  // lower-cased
 	c.Equal("HELLo", applyCase("hELLo", false, true))  // first letter upper-cased
 	c.Equal("Hello", applyCase("hELLo", true, true))   // lowered, then first letter upper-cased
+}
+
+// recordingNamer captures the randomizer handed to GenerateNameWithRandomizer so a test can confirm the shared
+// generateName helper supplies a real one. Its GenerateName routes through generateName exactly as the real namers do.
+type recordingNamer struct {
+	got xrand.Randomizer
+}
+
+func (r *recordingNamer) GenerateName() string { return generateName(r) }
+
+func (r *recordingNamer) GenerateNameWithRandomizer(rnd xrand.Randomizer) string {
+	r.got = rnd
+	return "recorded"
+}
+
+func TestGenerateNameSuppliesFreshRandomizer(t *testing.T) {
+	c := check.New(t)
+	// generateName is the single place every Namer.GenerateName routes through; it must delegate to
+	// GenerateNameWithRandomizer with a real (non-nil) randomizer and return that method's result.
+	r := &recordingNamer{}
+	c.Equal("recorded", r.GenerateName())
+	c.True(r.got != nil, "generateName must pass a non-nil randomizer")
+}
+
+func TestGenerateNameAcrossNamers(t *testing.T) {
+	c := check.New(t)
+	// Every concrete Namer.GenerateName delegates through the shared generateName helper and must still produce a valid
+	// name. With a single source name, SimpleNamer and CompoundNamer are deterministic; the Markov namers must at least
+	// produce a non-empty name.
+	const name = "solo"
+	c.Equal(name, NewSimpleNamer(map[string]int{name: 1}, false, false).GenerateName())
+	c.Equal(name, NewCompoundNamer(" ", false, false, NewSimpleNamer(map[string]int{name: 1}, false, false)).GenerateName())
+	c.True(NewMarkovLetterNamer(2, map[string]int{name: 1}, false, false).GenerateName() != "",
+		"MarkovLetterNamer.GenerateName must produce a name")
+	c.True(NewMarkovRunNamer(map[string]int{name: 1}, false, false).GenerateName() != "",
+		"MarkovRunNamer.GenerateName must produce a name")
 }
 
 func TestPickWeighted(t *testing.T) {

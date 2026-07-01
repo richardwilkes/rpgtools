@@ -99,7 +99,7 @@ func (n *markov[S]) add(name string, count int, mapping map[string]map[S]int, le
 
 // GenerateName generates a new random name.
 func (n *markov[S]) GenerateName() string {
-	return n.GenerateNameWithRandomizer(xrand.New())
+	return generateName(n)
 }
 
 // GenerateNameWithRandomizer generates a new random name using the specified randomizer.
