@@ -133,7 +133,9 @@ func (c *Config) Valid() error {
 func (c *Config) equationOverflows() bool {
 	var count, modifier int
 	if c.ExtraDiceFromModifiers {
-		count, modifier = computeExtraDice(c.MaxSides, c.MaxModifier)
+		// Measure the full, uncapped conversion here -- the worst case for overflow -- even though
+		// ApplyExtraDiceFromModifiers caps the dice it actually adds at MaxCount at runtime.
+		count, modifier = computeExtraDice(c.MaxSides, c.MaxModifier, math.MaxInt)
 		count += c.MaxCount
 		if count < 0 {
 			return true
@@ -164,23 +166,39 @@ func mulOverflows(a, b int) bool {
 	return a != 0 && b > math.MaxInt/a
 }
 
-func computeExtraDice(sides, modifier int) (dieCountAdjustment, adjustedModifier int) {
-	if sides < 2 || modifier < sides/2 {
+// computeExtraDice converts as much of modifier as possible into extra dice of the given number of sides, returning the
+// number of dice to add and the modifier left over after the conversion. No more than maxAdjustment dice are produced;
+// any modifier that would have converted into further dice beyond that limit is left in the returned modifier instead.
+// Pass a maxAdjustment of math.MaxInt (or any value at least as large as the uncapped count) to convert without a cap.
+func computeExtraDice(sides, modifier, maxAdjustment int) (dieCountAdjustment, adjustedModifier int) {
+	if sides < 2 || modifier < sides/2 || maxAdjustment < 1 {
 		return 0, modifier
 	}
 	average := (sides + 1) / 2
 	if sides&1 == 1 {
-		// Odd number of sides, so average is a whole number
-		return modifier / average, modifier % average
+		// Odd number of sides, so average is a whole number and every die consumes exactly average of the modifier.
+		dieCountAdjustment = min(modifier/average, maxAdjustment)
+		return dieCountAdjustment, modifier - dieCountAdjustment*average
 	}
-	// Even number of sides, so each die's true average is average+0.5. A pair of dice therefore consumes
-	// exactly 2*average+1 of the modifier and a lone die consumes average+1 (rounding the trailing half up).
+	// Even number of sides, so each die's true average is average+0.5. A pair of dice therefore consumes exactly
+	// 2*average+1 of the modifier and a lone die consumes average+1 (rounding the trailing half up).
 	perPair := 2*average + 1
 	dieCountAdjustment = 2 * (modifier / perPair)
 	adjustedModifier = modifier % perPair
 	if adjustedModifier >= average+1 {
 		dieCountAdjustment++
 		adjustedModifier -= average + 1
+	}
+	if dieCountAdjustment > maxAdjustment {
+		// The full conversion overshoots the cap, so keep only maxAdjustment dice and leave the rest of the modifier
+		// untouched. maxAdjustment/2 whole pairs each consume perPair; an odd cap adds one lone die consuming
+		// average+1, charging exactly what the greedy conversion above would have charged those same dice.
+		dieCountAdjustment = maxAdjustment
+		consumed := (maxAdjustment / 2) * perPair
+		if maxAdjustment&1 == 1 {
+			consumed += average + 1
+		}
+		adjustedModifier = modifier - consumed
 	}
 	return dieCountAdjustment, adjustedModifier
 }

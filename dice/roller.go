@@ -102,11 +102,12 @@ func (r *Roller) Normalize(dice Dice) Dice {
 }
 
 // ApplyExtraDiceFromModifiers returns the Dice as if the ExtraDiceFromModifiers configuration option had been applied
-// to its components.
+// to its components. No more dice are added than the configured MaxCount allows: once the count would reach MaxCount,
+// any modifier that would have converted into further dice is left in the modifier instead.
 func (r *Roller) ApplyExtraDiceFromModifiers(dice Dice) Dice {
 	dice = r.Normalize(dice)
 	var adjustment int
-	adjustment, dice.Modifier = computeExtraDice(dice.Sides, dice.Modifier)
+	adjustment, dice.Modifier = computeExtraDice(dice.Sides, dice.Modifier, r.cfg.MaxCount-dice.Count)
 	dice.Count += adjustment
 	return dice
 }

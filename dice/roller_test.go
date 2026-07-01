@@ -110,6 +110,49 @@ func TestApplyExtraDiceFromModifiersAfter(t *testing.T) {
 	}
 }
 
+func TestApplyExtraDiceFromModifiersRespectsMaxCount(t *testing.T) {
+	c := check.New(t)
+
+	newCapped := func(maxCount int) *dice.Roller {
+		cfg := dice.DefaultConfig()
+		cfg.MaxCount = maxCount
+		cfg.ExtraDiceFromModifiers = true
+		r, err := dice.NewRoller(cfg)
+		c.NoError(err)
+		return r
+	}
+
+	r := newCapped(2)
+	for i, one := range []struct {
+		Text     string
+		Count    int
+		Sides    int
+		Modifier int
+	}{
+		{"1d5+10", 2, 5, 7}, // 0 - odd sides (exact): 1d5+10 would be 4d5+1, but MaxCount caps it to 2d5+7
+		{"1d6+8", 2, 6, 4},  // 1 - even sides: 1d6+8 would be 3d6+1, but MaxCount caps it to 2d6+4
+		{"2d6+8", 2, 6, 8},  // 2 - already at MaxCount: nothing converts, the full modifier is retained
+		{"1d6+3", 1, 6, 3},  // 3 - modifier too small to form even one die: unchanged
+		{"1d6+4", 2, 6, 0},  // 4 - exactly one die fits under the cap
+	} {
+		desc := fmt.Sprintf("Table index %d: %s", i, one.Text)
+		d := r.ApplyExtraDiceFromModifiers(r.Parse(one.Text))
+		c.Equal(one.Count, d.Count, desc)
+		c.Equal(one.Sides, d.Sides, desc)
+		c.Equal(one.Modifier, d.Modifier, desc)
+		c.True(d.Count <= 2, desc)
+	}
+
+	// Regression for the unbounded-count finding: with MaxCount==1 a large modifier previously ballooned Count to
+	// hundreds of thousands (an effective hang, since Roll iterates Count times). Now no dice can be added past the
+	// cap, so Count stays at 1 and the whole modifier is retained.
+	r1 := newCapped(1)
+	d := r1.ApplyExtraDiceFromModifiers(r1.Parse("1d2+999999"))
+	c.Equal(1, d.Count)
+	c.Equal(2, d.Sides)
+	c.Equal(999999, d.Modifier)
+}
+
 //nolint:goconst // The tests are more readable without constants for duplicated string
 func TestStringRoundTrip(t *testing.T) {
 	c := check.New(t)
