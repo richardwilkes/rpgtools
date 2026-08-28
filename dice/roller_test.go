@@ -10,9 +10,11 @@
 package dice_test
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"math"
 	"math/big"
+	"strconv"
 	"testing"
 	"time"
 
@@ -449,6 +451,87 @@ func TestUnmarshalTextCapsOversizedNumbers(t *testing.T) {
 	c.Equal(fieldCap, d.Multiplier)
 }
 
+func TestUnmarshalTextSaturatesBareNumberSum(t *testing.T) {
+	c := check.New(t)
+	const fieldCap = math.MaxInt - 1 // UnmarshalText parses against maxFieldValue, one below math.MaxInt
+	// Regression: a bare number with a signed modifier ("5+3") folds the count into the modifier. Each half is capped
+	// at maxFieldValue individually, but their sum was not, so two large halves wrapped to a sign-flipped garbage
+	// value (e.g. -8446744073709551616 below). The sum must saturate at the cap instead.
+	var d dice.Dice
+	c.NoError(d.UnmarshalText([]byte("5000000000000000000+5000000000000000000")))
+	c.Equal(fieldCap, d.Modifier)
+	c.Equal(0, d.Count)
+
+	c.NoError(d.UnmarshalText([]byte("99999999999999999999+99999999999999999999")))
+	c.Equal(fieldCap, d.Modifier)
+
+	// The boundary: exactly at the cap on either side of the sign is unchanged, one past it saturates.
+	capText := strconv.Itoa(fieldCap)
+	c.NoError(d.UnmarshalText([]byte(capText + "+0")))
+	c.Equal(fieldCap, d.Modifier)
+	c.NoError(d.UnmarshalText([]byte("0+" + capText)))
+	c.Equal(fieldCap, d.Modifier)
+	c.NoError(d.UnmarshalText([]byte(capText + "+1")))
+	c.Equal(fieldCap, d.Modifier)
+	c.NoError(d.UnmarshalText([]byte("1+" + capText)))
+	c.Equal(fieldCap, d.Modifier)
+
+	// A negative modifier cannot overflow when the count is added back, and the largest magnitudes cancel exactly.
+	c.NoError(d.UnmarshalText([]byte("5000000000000000000-5000000000000000000")))
+	c.Equal(0, d.Modifier)
+	c.NoError(d.UnmarshalText([]byte(capText + "-" + capText)))
+	c.Equal(0, d.Modifier)
+	c.NoError(d.UnmarshalText([]byte("1-" + capText)))
+	c.Equal(1-fieldCap, d.Modifier)
+
+	// Ordinary sums are unaffected.
+	c.NoError(d.UnmarshalText([]byte("5+3")))
+	c.Equal(8, d.Modifier)
+	c.NoError(d.UnmarshalText([]byte("5-8")))
+	c.Equal(-3, d.Modifier)
+}
+
+// TestParseClampsBareNumberSumToMaxModifier verifies the folded bare-number sum is clamped to the Roller's MaxModifier
+// even when MaxCount alone would allow a larger value, since the count becomes part of the modifier.
+func TestParseClampsBareNumberSumToMaxModifier(t *testing.T) {
+	c := check.New(t)
+	cfg := dice.DefaultConfig()
+	cfg.MaxCount = 100
+	cfg.MaxModifier = 5
+	r, err := dice.NewRoller(cfg)
+	c.NoError(err)
+	c.Equal(5, r.Parse("50+3").Modifier)
+	c.Equal(5, r.Parse("50-1").Modifier)
+	c.Equal(-5, r.Parse("0-50").Modifier)
+	c.Equal(4, r.Parse("3+1").Modifier)
+	c.Equal(0, r.Parse("50+3").Count)
+}
+
+func TestDiceHash(t *testing.T) {
+	c := check.New(t)
+	digest := func(d *dice.Dice) []byte {
+		h := sha256.New()
+		d.Hash(h)
+		return h.Sum(nil)
+	}
+	base := dice.Dice{Count: 3, Sides: 6, Modifier: 2, Multiplier: 1}
+	want := digest(&base)
+	// Deterministic for equal contents.
+	c.Equal(want, digest(&dice.Dice{Count: 3, Sides: 6, Modifier: 2, Multiplier: 1}))
+	// Every field contributes to the digest.
+	c.NotEqual(want, digest(&dice.Dice{Count: 3, Sides: 6, Modifier: 1, Multiplier: 1}))
+	c.NotEqual(want, digest(&dice.Dice{Count: 2, Sides: 6, Modifier: 2, Multiplier: 1}))
+	c.NotEqual(want, digest(&dice.Dice{Count: 3, Sides: 8, Modifier: 2, Multiplier: 1}))
+	c.NotEqual(want, digest(&dice.Dice{Count: 3, Sides: 6, Modifier: 2, Multiplier: 2}))
+	// The fields are hashed in a fixed order, so swapping two values changes the digest.
+	c.NotEqual(digest(&dice.Dice{Count: 3, Sides: 6}), digest(&dice.Dice{Count: 6, Sides: 3}))
+	// A nil receiver writes nothing, leaving the hasher in its initial state.
+	var nilDice *dice.Dice
+	h := sha256.New()
+	c.NotPanics(func() { nilDice.Hash(h) })
+	c.Equal(sha256.New().Sum(nil), h.Sum(nil))
+}
+
 // bigEvenAdjust independently computes the even-sided modifier-to-extra-dice conversion using arbitrary-precision math,
 // providing a reference that is immune to fixed-width arithmetic mistakes regardless of how large the inputs grow. It
 // mirrors the package rule: an even-sided die's true average is average+0.5, k = floor(2*modifier/(2*average+1)) dice
@@ -580,6 +663,41 @@ func TestExtractFirstPosition(t *testing.T) {
 		{"3d6+x5", 0, 3}, // 44
 		{"5+x2", 0, 1},   // 45
 		{"d6+X2", 0, 2},  // 46 - uppercase multiplier
+		// A sign with no candidate before it is prose, not a dangling operator: it must not end the scan, so a spec
+		// later in the text is still found. Nor is the sign part of the span, which always begins with a digit or 'd'.
+		{"Deal +2d6 fire damage", 6, 9}, // 47
+		{"cost + 3d6 damage", 7, 10},    // 48
+		{"+3d6", 1, 4},                  // 49
+		{" -4d6-", 2, 5},                // 50 - the trailing dangling '-' is still trimmed
+		{"+-3d6", 2, 5},                 // 51 - repeated leading signs
+		{"+3d6+2", 1, 6},                // 52 - a real modifier after the spec is kept
+		{"-5x2 3d6", 5, 8},              // 53 - a signed bare number with a multiplier is skipped, not the whole scan
+		// A signed bare number is never reported (contrast the unsigned "5" and "13", cases 18-19), matching the
+		// prose-embedded cases 8-9.
+		{"+13", -1, -1},     // 54
+		{"-13", -1, -1},     // 55
+		{"roll -5", -1, -1}, // 56
+		{"-5x2", -1, -1},    // 57
+		// A die marker after a sign's digit operand means the operand is really the count of a dice spec; the bare
+		// number and sign before it are not part of the notation, so the span is the dice spec itself rather than the
+		// arithmetic prefix ("12+3", which New would collapse to "15").
+		{"12+3d6", 3, 6},      // 58
+		{"5+3d6", 2, 5},       // 59
+		{"12+3d6+2x3", 3, 10}, // 60
+		{"d+5d6", 2, 5},       // 61 - after a discarded 'd', like case 15
+		{"3d6+2d6", 0, 5},     // 62 - control: a spec that already has a 'd' ends at the second one, as New does
+		{"d6+d6", 0, 2},       // 63 - control: a die marker directly after a sign is dangling, so the sign is trimmed
+		{"+d6", 1, 3},         // 64 - a leading sign before a 'd' spec
+		// Discarding a 'd' that no digit followed must re-examine the character that triggered the discard, so a
+		// second 'd' can start a new candidate. Case 17 ("ddd6") only worked because the third 'd' was seen afresh.
+		{"dd6", 1, 3},  // 65
+		{"Dd6", 1, 3},  // 66
+		{"dd", -1, -1}, // 67
+		// The re-examined 'd' inherits the word status of the run it belongs to: the second 'd' of "add" is in a
+		// word just as the first is (case 23), so a trailing bare number stays reportable, while a standalone "dd"
+		// suppresses it just as a standalone "d" (case 10) does.
+		{"adds 5", 5, 6}, // 68
+		{"dd 5", -1, -1}, // 69
 	} {
 		desc := fmt.Sprintf("Table index %d: %s", i, one.Text)
 		start, end := dice.ExtractDicePosition(one.Text)
@@ -600,6 +718,8 @@ func TestExtractedSpanIsCanonical(t *testing.T) {
 		"5", "roll 5", "d6", "2d6+2",
 		// A sign directly before a multiplier is dangling; the span must still be exactly what New parses it back into.
 		"d6+x2", "d6-x2", "3d6+x5", "5+x2", "d6+X2",
+		// A sign with nothing before it, or a bare number joined by a sign to a dice spec, is left out of the span.
+		"Deal +2d6 fire damage", "+3d6", " -4d6-", "12+3d6", "5+3d6", "12+3d6+2x3", "+d6", "dd6",
 	} {
 		start, end := dice.ExtractDicePosition(text)
 		c.True(start >= 0 && start < end, text)

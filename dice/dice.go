@@ -109,7 +109,15 @@ func parseDice(in string, maxCount, maxSides, maxModifier, maxMultiplier int) Di
 		ch, i = nextChar(in, i)
 	}
 	if !hadD {
-		dice.Modifier += dice.Count
+		// A bare number is a modifier, so fold the count into it. Count is in [0, maxCount] and Modifier is in
+		// [-maxModifier, maxModifier], but the two caps may together exceed math.MaxInt (UnmarshalText uses
+		// maxFieldValue for both), so saturate at maxModifier rather than let the sum wrap to a sign-flipped value.
+		// The subtraction cannot overflow: both operands are non-negative and at most maxFieldValue.
+		if dice.Modifier > maxModifier-dice.Count {
+			dice.Modifier = maxModifier
+		} else {
+			dice.Modifier += dice.Count
+		}
 		dice.Count = 0
 	}
 	if isMultiplier(rune(ch)) {
@@ -142,85 +150,121 @@ func ExtractDicePosition(text string) (start, end int) {
 	droppedD := false     // A standalone (non-word) 'd' was discarded because no digit followed it.
 	dInWord := false      // The 'd' starting the current candidate is adjacent to a letter, so it is part of a word.
 	signHasDigit := false // A digit has followed the latest sign, so the sign has an operand and is not dangling.
+	operandStart := -1    // The index of the first digit following the latest sign.
 	maximum := len(text)
 	var prev rune
 	for i, ch := range text {
-		if state == 5 {
-			// A bare number was found and we are skipping the spaces that follow it. It stays a valid result only if
-			// the text ends here; any other character means the number was not the final token, so discard it and
-			// rescan from this character.
-			if ch == ' ' {
-				prev = ch
-				continue
-			}
-			start = -1
-			foundDigit = false
-			state = 0
-		}
-		switch state {
-		case 0: // Look for a leading number (with or without a sign) or a 'd'
-			switch {
-			case isDigit(ch):
-				foundDigit = true
-				if start == -1 {
-					start = i
+		// A transition may discard the current candidate and ask for the character to be examined again in the state
+		// it moves to, so that the character can begin a new candidate rather than being consumed by the discard.
+		for again := true; again; {
+			again = false
+			switch state {
+			case 0: // Look for a leading number (with or without a sign) or a 'd'
+				switch {
+				case isDigit(ch):
+					foundDigit = true
+					if start == -1 {
+						start = i
+					}
+				case isDieMarker(ch):
+					if start == -1 {
+						start = i
+					}
+					hasD = true
+					// A 'd' directly after a discarded 'd' (which is what a preceding die marker must be, since we are
+					// back in this state) belongs to the same run of letters, so it is in a word if that one was, as
+					// the second 'd' of "add 5" is.
+					dInWord = isProseLetter(prev) || (isDieMarker(prev) && dInWord)
+					state = 1
+				case isSign(ch):
+					signHasDigit = false
+					state = 2
+				case ch == ' ' && start != -1:
+					// A space after a bare number may just be trailing whitespace; defer judging it until we learn
+					// whether any non-space content follows (handled by state 5).
+					state = 5
+				default:
+					foundDigit = false
+					start = -1
+					hasD = false
 				}
-			case isDieMarker(ch):
-				if start == -1 {
-					start = i
+			case 1: // Got 'd', but may not have found a digit yet; allow digits, sign or 'x'
+				switch {
+				case isDigit(ch):
+					foundDigit = true
+				case !foundDigit:
+					// Discard the 'd': no digit followed it, so it is not a die marker. Only remember the discard when
+					// the 'd' was standalone; a 'd' that is part of a word (adjacent to a prose letter before or after
+					// it, as in "read 5" or "drum 5") must not suppress an unrelated bare number later in the text.
+					// The current character is examined again so it can start a new candidate; consuming it here would
+					// lose the second 'd' of "dd6".
+					if !dInWord && !isProseLetter(ch) {
+						droppedD = true
+					}
+					start = -1
+					hasD = false
+					state = 0
+					again = true
+				case isSign(ch):
+					signHasDigit = false
+					state = 2
+				case isMultiplier(ch):
+					state = 3
+				default:
+					state = 4
 				}
-				hasD = true
-				dInWord = isProseLetter(prev)
-				state = 1
-			case isSign(ch):
-				signHasDigit = false
-				state = 2
-			case ch == ' ' && start != -1:
-				// A space after a bare number may just be trailing whitespace; defer judging it until we learn whether
-				// any non-space content follows (handled by the state == 5 branch above).
-				state = 5
-			default:
-				foundDigit = false
-				start = -1
-				hasD = false
-			}
-		case 1: // Got 'd', but may not have found a digit yet; allow digits, sign or 'x'
-			switch {
-			case isDigit(ch):
-				foundDigit = true
-			case !foundDigit:
-				// Discard the 'd': no digit followed it, so it is not a die marker. Only remember the discard when the
-				// 'd' was standalone; a 'd' that is part of a word (adjacent to a prose letter before or after it, as
-				// in "read 5" or "drum 5") must not suppress an unrelated bare number later in the text.
-				if !dInWord && !isProseLetter(ch) {
-					droppedD = true
+			case 2: // Found a sign; take its digit operand, then a multiplier if present, as New does.
+				switch {
+				case isDigit(ch):
+					if !signHasDigit {
+						signHasDigit = true
+						operandStart = i
+					}
+				case isMultiplier(ch) && signHasDigit:
+					state = 3
+				case isDieMarker(ch) && signHasDigit && !hasD:
+					// The sign's operand turns out to be the count of a dice spec, as in "12+3d6" or "+3d6". Neither
+					// the sign nor whatever preceded it (at most a bare number) belongs to that spec, so the candidate
+					// restarts at the operand's first digit. The digits directly before this 'd' mean it cannot be part
+					// of a word.
+					start = operandStart
+					foundDigit = true
+					hasD = true
+					dInWord = false
+					state = 1
+				case start == -1:
+					// The sign had no candidate before it, so nothing has been collected: the sign and any operand were
+					// merely prose (e.g. "+13 years"). Rescan from this character rather than ending the scan, which
+					// would hide a spec later in the text.
+					state = 0
+					again = true
+				default:
+					// A sign with no digit operand is dangling: New reads an empty operand and drops the sign, so it
+					// cannot carry a following multiplier into the spec. End the spec here so the trailing-operator
+					// trim drops the dangling sign, keeping the span canonical (e.g. "d6+x2" yields "d6").
+					state = 4
 				}
-				start = -1
-				hasD = false
-				state = 0
-			case isSign(ch):
-				signHasDigit = false
-				state = 2
-			case isMultiplier(ch):
-				state = 3
-			default:
-				state = 4
-			}
-		case 2: // Found a sign; take its digit operand, then a multiplier if present, as New does.
-			switch {
-			case isDigit(ch):
-				signHasDigit = true
-			case isMultiplier(ch) && signHasDigit:
-				state = 3
-			default:
-				// A sign with no digit operand is dangling: New reads an empty operand and drops the sign, so it
-				// cannot carry a following multiplier into the spec. End the spec here so the trailing-operator trim
-				// drops the dangling sign, keeping the span canonical (e.g. "d6+x2" yields "d6").
-				state = 4
-			}
-		case 3: // Found an 'x'; allow digits. A space ends the spec, just as it does in New.
-			if !isDigit(ch) {
-				state = 4
+			case 3: // Found an 'x'; allow digits. A space ends the spec, just as it does in New.
+				if !isDigit(ch) {
+					if start == -1 {
+						// A signed bare number with a multiplier (e.g. "-5x2"), which is never reported; rescan from
+						// this character.
+						state = 0
+						again = true
+					} else {
+						state = 4
+					}
+				}
+			case 5:
+				// A bare number was found and we are skipping the spaces that follow it. It stays a valid result only
+				// if the text ends here; any other character means the number was not the final token, so discard it
+				// and rescan from this character.
+				if ch != ' ' {
+					start = -1
+					foundDigit = false
+					state = 0
+					again = true
+				}
 			}
 		}
 		if state == 4 {
