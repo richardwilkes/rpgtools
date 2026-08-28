@@ -315,7 +315,7 @@ func (date Date) TextCalendarMonth(w io.Writer) {
 func (date Date) textCalendarMonth(w io.Writer, width int) {
 	cal := date.calendar()
 	cfg := cal.config()
-	year, month, _, maximum := date.resolve()
+	_, month, dayInMonth, maximum := date.resolve()
 	fmt.Fprintf(w, "%d: %s", month, cfg.Months[month-1].Name)
 	lastDayOfWeek := len(cfg.WeekDays) - 1
 	for i, weekday := range cfg.WeekDays {
@@ -327,7 +327,9 @@ func (date Date) textCalendarMonth(w io.Writer, width int) {
 		fmt.Fprint(w, strings.Repeat(" ", width-1))
 		fmt.Fprint(w, xstrings.FirstN(weekday, 1))
 	}
-	firstDay := cal.MustNewDate(month, 1, year)
+	// Step back to the first of the month from the date itself rather than rebuilding it through NewDate, which would
+	// reject a year that straddles DaysLimit even though a Date within it is obtainable from NewDateByDays.
+	firstDay := date.Add(1 - dayInMonth)
 	for i := 1; i <= maximum; i++ {
 		weekDay := firstDay.Add(i - 1).WeekDay()
 		if i == 1 || weekDay == 0 {

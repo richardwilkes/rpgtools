@@ -20,7 +20,7 @@ import (
 )
 
 // maxDaysPerYear bounds the total number of days a year may contain: the sum of every month's Days. The date
-// arithmetic multiplies the days-per-year by a year magnitude of up to math.MaxInt32 (the widest span isValidYear
+// arithmetic multiplies the days-per-year by a year magnitude of up to math.MaxInt32 (the widest span IsValidYear
 // permits), so keeping the sum at or below this value guarantees those products -- and the leap-day counts layered on
 // top -- stay within an int rather than overflowing and silently corrupting the resulting date.
 const maxDaysPerYear = math.MaxInt32

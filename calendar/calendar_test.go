@@ -11,6 +11,7 @@ package calendar_test
 
 import (
 	"bytes"
+	"math"
 	"strings"
 	"testing"
 
@@ -147,7 +148,7 @@ func TestTextHoistedWidthMatchesPerMonth(t *testing.T) {
 	for _, cal := range []*calendar.Calendar{calendar.Gregorian(), calendar.PathfinderAbsalomReckoning()} {
 		const year = 2017
 		var full bytes.Buffer
-		cal.Text(year, &full)
+		c.NoError(cal.Text(year, &full))
 		out := full.String()
 		months := cal.Config().Months
 		for month := 1; month <= len(months); month++ {
@@ -157,6 +158,38 @@ func TestTextHoistedWidthMatchesPerMonth(t *testing.T) {
 				"month %d block must appear verbatim in the full-year text", month)
 		}
 	}
+}
+
+func TestTextRejectsInvalidYear(t *testing.T) {
+	c := check.New(t)
+	// Text used to reach an invalid year through MustNewDate and panic. It must now report the year as an error, and
+	// leave the writer untouched, for every kind of year NewDate rejects: the nonexistent year 0, years beyond the
+	// int32 range, and (on a calendar whose years are large enough to reach it) a year that runs past DaysLimit.
+	huge, err := calendar.New(&calendar.Config{
+		WeekDays: []string{"A"},
+		Months:   []calendar.Month{{Name: "Only", Days: math.MaxInt32}},
+	})
+	c.NoError(err)
+	for _, tc := range []struct {
+		cal  *calendar.Calendar
+		year int
+	}{
+		{calendar.Gregorian(), 0},
+		{calendar.Gregorian(), math.MaxInt32 + 1},
+		{calendar.Gregorian(), math.MinInt32 - 1},
+		{calendar.Gregorian(), math.MaxInt},
+		{calendar.Gregorian(), math.MinInt},
+		{huge, math.MaxInt32},
+		{huge, math.MinInt32},
+	} {
+		var buf bytes.Buffer
+		c.NotPanics(func() { err = tc.cal.Text(tc.year, &buf) }, "year %d", tc.year)
+		c.HasError(err, "year %d", tc.year)
+		c.Equal(0, buf.Len(), "nothing may be written for invalid year %d", tc.year)
+	}
+	var buf bytes.Buffer
+	c.NoError(calendar.Gregorian().Text(2017, &buf))
+	c.True(strings.HasPrefix(buf.String(), "Year 2017\n"))
 }
 
 func TestDateAccessorsRoundTrip(t *testing.T) {
@@ -212,6 +245,56 @@ func TestLeapYearIs(t *testing.T) {
 	c.False(cal.IsLeapYear(-201))
 	c.False(cal.IsLeapYear(-301))
 	c.True(cal.IsLeapYear(-401))
+}
+
+func TestDays(t *testing.T) {
+	c := check.New(t)
+	greg := calendar.Gregorian()
+	c.Equal(366, greg.Days(2016))
+	c.Equal(365, greg.Days(2017))
+	c.Equal(365, greg.Days(1900)) // Except: a multiple of 100
+	c.Equal(366, greg.Days(2000)) // Unless: a multiple of 400
+	c.Equal(366, greg.Days(-1))
+	c.Equal(365, greg.Days(-2))
+	c.Equal(366, greg.Days(-5))
+
+	// Days must agree with the distance between consecutive first-of-year dates, since that is what the date math
+	// derives from the same leap rule.
+	for _, year := range []int{-401, -101, -5, -2, -1, 1, 3, 4, 100, 400, 1900, 2000, 2016, 2017} {
+		next := year + 1
+		if next == 0 {
+			next = 1
+		}
+		c.Equal(greg.MustNewDate(1, 1, next).Days()-greg.MustNewDate(1, 1, year).Days(), greg.Days(year),
+			"Days(%d)", year)
+	}
+
+	// A calendar with no leap rule has the same length every year.
+	flat, err := calendar.New(&calendar.Config{
+		WeekDays: []string{"A"},
+		Months:   []calendar.Month{{Name: "Short", Days: 10}, {Name: "Long", Days: 12}},
+	})
+	c.NoError(err)
+	c.Equal(22, flat.Days(1))
+	c.Equal(22, flat.Days(4))
+	c.Equal(22, flat.Days(-4))
+
+	// Days is not range-checked the way IsLeapYear is. Date.Year reports a year outside [MinInt32, MaxInt32] for a
+	// date built by NewDateByDays, and the length of such a year must follow the leap rule as the internal date math
+	// does: MaxInt32+1 and MinInt32-1 are both leap years under the Gregorian rule, yet IsLeapYear reports false for
+	// them. Pin Days against the date math by stepping through such a year one day at a time from a valid neighbor.
+	for _, year := range []int{math.MaxInt32 + 1, math.MinInt32 - 1} {
+		c.False(greg.IsLeapYear(year), "IsLeapYear(%d) is range-checked", year)
+		c.Equal(366, greg.Days(year), "Days(%d) is not", year)
+	}
+	first := greg.MustNewDate(12, 31, math.MaxInt32).Add(1) // 1/1/(MaxInt32+1)
+	c.Equal(math.MaxInt32+1, first.Year())
+	c.Equal(math.MaxInt32+1, first.Add(greg.Days(math.MaxInt32+1)-1).Year(), "last day of the year")
+	c.Equal(math.MaxInt32+2, first.Add(greg.Days(math.MaxInt32+1)).Year(), "first day of the next year")
+	last := greg.MustNewDate(1, 1, math.MinInt32).Add(-1) // last day of MinInt32-1
+	c.Equal(math.MinInt32-1, last.Year())
+	c.Equal(math.MinInt32-1, last.Add(1-greg.Days(math.MinInt32-1)).Year(), "first day of the year")
+	c.Equal(math.MinInt32-2, last.Add(-greg.Days(math.MinInt32-1)).Year(), "last day of the previous year")
 }
 
 func TestLeapYearValidMultiples(t *testing.T) {

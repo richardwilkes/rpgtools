@@ -76,16 +76,18 @@ func TestConfigBoundsTotalDaysPerYear(t *testing.T) {
 	c.HasError(err)
 	c.True(cal == nil)
 
-	// The total is capped at math.MaxInt32. A single month exactly at the cap is accepted, MinDaysPerYear reports it
-	// faithfully, and building the most extreme valid date stays finite (saturating to the day limit) rather than
-	// wrapping to a negative day count or panicking in resolve().
+	// The total is capped at math.MaxInt32. A single month exactly at the cap is accepted and MinDaysPerYear reports
+	// it faithfully. Year math.MaxInt32 on such a calendar lies beyond DaysLimit, so NewDate rejects it rather than
+	// returning a saturated date, while a date at the limit itself stays finite and resolves rather than wrapping to a
+	// negative day count or panicking in resolve().
 	atCap := base(calendar.Month{Name: "A", Days: math.MaxInt32})
 	c.NoError(atCap.Valid())
 	cal, err = calendar.New(atCap)
 	c.NoError(err)
 	c.Equal(math.MaxInt32, cal.MinDaysPerYear())
-	d, err := cal.NewDate(1, 1, math.MaxInt32)
-	c.NoError(err)
+	_, err = cal.NewDate(1, 1, math.MaxInt32)
+	c.HasError(err)
+	d := cal.NewDateByDays(calendar.DaysLimit)
 	c.True(d.Days() > 0, "extreme date must not wrap to a negative day count")
 	c.Equal(1, d.Month())
 

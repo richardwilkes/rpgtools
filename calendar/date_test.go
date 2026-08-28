@@ -59,6 +59,56 @@ func TestNewDate(t *testing.T) {
 	c.HasError(err)
 }
 
+func TestNewDateRejectsYearBeyondDaysLimit(t *testing.T) {
+	c := check.New(t)
+	// A single month of math.MaxInt32 days is the longest year Config.Valid accepts, so its years reach DaysLimit while
+	// still inside the int32 range IsValidYear permits. NewDate previously built such a date through NewDateByDays,
+	// which saturates, and returned the saturated date with a nil error. Year math.MaxInt32 starts
+	// (MaxInt32-1)*MaxInt32 days after 1/1/1, far past DaysLimit.
+	cal, err := calendar.New(&calendar.Config{
+		WeekDays: []string{"A"},
+		Months:   []calendar.Month{{Name: "Only", Days: math.MaxInt32}},
+	})
+	c.NoError(err)
+	_, err = cal.NewDate(1, 1, math.MaxInt32)
+	c.HasError(err)
+	_, err = cal.NewDate(1, 1, math.MinInt32)
+	c.HasError(err)
+
+	// The last year that fits entirely within DaysLimit is accepted in full, and the year after it -- which begins
+	// inside the limit but ends past it -- is rejected outright so that every accepted year can be walked end to end.
+	limitYear := calendar.DaysLimit / math.MaxInt32 // 2^30: the last whole year on either side of 1/1/1
+	d, err := cal.NewDate(1, math.MaxInt32, limitYear)
+	c.NoError(err)
+	c.Equal(limitYear*math.MaxInt32-1, d.Days())
+	c.Equal(limitYear, d.Year())
+	c.Equal(math.MaxInt32, d.DayInMonth())
+	_, err = cal.NewDate(1, 1, limitYear+1)
+	c.HasError(err)
+	d, err = cal.NewDate(1, 1, -limitYear)
+	c.NoError(err)
+	c.Equal(-limitYear*math.MaxInt32, d.Days())
+	c.Equal(-limitYear, d.Year())
+	c.Equal(1, d.DayInMonth())
+	_, err = cal.NewDate(1, math.MaxInt32, -limitYear-1)
+	c.HasError(err)
+
+	// A Date obtained from NewDateByDays can still sit in the straddling year NewDate rejects; rendering it must not
+	// panic now that the month text no longer rebuilds the first of the month through NewDate.
+	d = cal.NewDateByDays(calendar.DaysLimit)
+	c.Equal(limitYear+1, d.Year())
+	c.NotPanics(func() { _ = d.Format(calendar.ShortFormat) })
+	c.Equal("1/1073741825/1073741825", d.Format(calendar.ShortFormat))
+
+	// Ordinary calendars never get near DaysLimit inside the int32 year range, so the extremes remain accepted.
+	for _, ordinary := range []*calendar.Calendar{calendar.Gregorian(), calendar.PathfinderAbsalomReckoning()} {
+		_, err = ordinary.NewDate(1, 1, math.MaxInt32)
+		c.NoError(err)
+		_, err = ordinary.NewDate(1, 1, math.MinInt32)
+		c.NoError(err)
+	}
+}
+
 func TestYear(t *testing.T) {
 	c := check.New(t)
 	cal := calendar.Gregorian()
@@ -415,7 +465,7 @@ func TestTextMultiByteWeekDayNames(t *testing.T) {
 	c.NoError(err)
 
 	var buf bytes.Buffer
-	cal.Text(2017, &buf)
+	c.NoError(cal.Text(2017, &buf))
 	out := buf.String()
 	c.True(utf8.ValidString(out), "calendar text must remain valid UTF-8")
 	// The week day legend abbreviates each name to its first rune, not its first byte.

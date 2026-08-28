@@ -102,11 +102,16 @@ func (c *Calendar) MustNewDate(month, day, year int) Date {
 	return date
 }
 
-// NewDate creates a new date from the specified month, day and year.
+// NewDate creates a new date from the specified month, day and year. The year must be one IsValidYear accepts and
+// every day of it must lie within DaysLimit of 1/1/1; a year that fails either test is rejected with an error rather
+// than silently producing a saturated Date that is not the one requested (see YearInDaysLimit).
 func (c *Calendar) NewDate(month, day, year int) (Date, error) {
-	if !isValidYear(year) {
+	if !IsValidYear(year) {
 		return Date{cal: c}, errs.Newf("year %d is invalid; must be in the range %d to %d, not including 0", year,
 			math.MinInt32, math.MaxInt32)
+	}
+	if !c.YearInDaysLimit(year) {
+		return Date{cal: c}, errs.Newf("year %d is invalid; it extends more than %d days from 1/1/1", year, DaysLimit)
 	}
 	cfg := c.config()
 	if month < 1 || month > len(cfg.Months) {
@@ -129,8 +134,19 @@ func (c *Calendar) NewDate(month, day, year int) (Date, error) {
 	return c.NewDateByDays(days), nil
 }
 
-func isValidYear(year int) bool {
+// IsValidYear returns true if the year is one that may be used.
+func IsValidYear(year int) bool {
 	return year != 0 && year >= math.MinInt32 && year <= math.MaxInt32
+}
+
+// YearInDaysLimit reports whether every day of the year lies within the [-DaysLimit, DaysLimit] span a Date can
+// represent. Config.Valid caps the days in a year at math.MaxInt32 and IsValidYear caps the year magnitude at the same
+// value, so a year's first day is at most about 2^62 days from 1/1/1: past DaysLimit, but far short of overflowing an
+// int, so the comparison is safe. The whole year is required to fit, not just the requested day, so that any year
+// NewDate accepts can be walked month by month (as Text does) without a later month saturating.
+func (c *Calendar) YearInDaysLimit(year int) bool {
+	first := c.yearToDays(year)
+	return first >= -DaysLimit && first+c.Days(year)-1 <= DaysLimit
 }
 
 // NewDateByDays creates a new date from a number of days, with 0 representing the date 1/1/1.
@@ -294,10 +310,13 @@ func (c *Calendar) mostDaysInMonth() int {
 	return most
 }
 
-// Days returns the number of days contained in a specific year.
+// Days returns the number of days contained in a specific year. Unlike IsLeapYear, the year is not range-checked:
+// Date.Year can legitimately report a year outside [math.MinInt32, math.MaxInt32] for a date built by NewDateByDays,
+// and the length of such a year follows the leap-year rule exactly as the internal date math treats it, so the result
+// always agrees with the distance between consecutive first-of-year dates.
 func (c *Calendar) Days(year int) int {
 	days := c.MinDaysPerYear()
-	if c.IsLeapYear(year) {
+	if c.isLeapYear(year) {
 		days++
 	}
 	return days
@@ -306,10 +325,10 @@ func (c *Calendar) Days(year int) int {
 // IsLeapYear returns true if the year is a leap year. Note that valid years are constrained to not 0 and in the range
 // math.MinInt32 to math.MaxInt32, so an invalid year will always return false.
 func (c *Calendar) IsLeapYear(year int) bool {
-	return isValidYear(year) && c.isLeapYear(year)
+	return IsValidYear(year) && c.isLeapYear(year)
 }
 
-// isLeapYear reports the leap status of a year from the leap-year rule alone, without the isValidYear range check the
+// isLeapYear reports the leap status of a year from the leap-year rule alone, without the IsValidYear range check the
 // public IsLeapYear applies. The internal date math (leapYearsSince and yearToDaysWith) needs the true leap status of
 // every year Date.Year's binary search probes, and that search ranges past the public [math.MinInt32, math.MaxInt32]
 // limits for a date whose year sits near them; treating those out-of-range probes as non-leap would undercount a
@@ -384,10 +403,14 @@ func (c *Calendar) countLeaps(n int) int {
 	return count
 }
 
-// Text writes a text representation of the year.
-func (c *Calendar) Text(year int, w io.Writer) {
+// Text writes a text representation of the year. An error is returned, and nothing is written, if the year is not one
+// NewDate accepts. Write errors from w are not reported, matching WriteFormat and TextCalendarMonth.
+func (c *Calendar) Text(year int, w io.Writer) error {
+	date, err := c.NewDate(1, 1, year)
+	if err != nil {
+		return err
+	}
 	cfg := c.config()
-	date := c.MustNewDate(1, 1, year)
 	date.WriteFormat(w, "Year %Y\n")
 	width := widthNeeded(c.mostDaysInMonth())
 	maximum := len(cfg.Months)
@@ -409,4 +432,5 @@ func (c *Calendar) Text(year int, w io.Writer) {
 	for i, weekday := range cfg.WeekDays {
 		fmt.Fprintf(w, "  %[1]*d: (%s) %s\n", widthNeeded(len(cfg.WeekDays)), i+1, xstrings.FirstN(weekday, 1), weekday)
 	}
+	return nil
 }
