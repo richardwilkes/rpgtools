@@ -10,11 +10,14 @@
 package calendar_test
 
 import (
+	"encoding/json"
 	"math"
+	"strings"
 	"testing"
 
 	"github.com/richardwilkes/rpgtools/calendar"
 	"github.com/richardwilkes/toolbox/v2/check"
+	"gopkg.in/yaml.v3"
 )
 
 func TestValidPrefabs(t *testing.T) {
@@ -98,4 +101,35 @@ func TestConfigBoundsTotalDaysPerYear(t *testing.T) {
 	// A month total well within the cap remains valid regardless of how many months contribute to it.
 	ok := base(calendar.Month{Name: "A", Days: 30}, calendar.Month{Name: "B", Days: 31}, calendar.Month{Name: "C", Days: 30})
 	c.NoError(ok.Valid())
+}
+
+func TestConfigOmitsEmptySeasons(t *testing.T) {
+	c := check.New(t)
+	// Seasons is optional, like LeapYear and the eras, and must be omitted from both encodings when empty rather than
+	// appearing as an empty list in YAML while being absent from JSON.
+	cfg := &calendar.Config{
+		WeekDays: []string{"A", "B"},
+		Months:   []calendar.Month{{Name: "M", Days: 10}},
+	}
+	c.NoError(cfg.Valid())
+	out, err := yaml.Marshal(cfg)
+	c.NoError(err)
+	c.False(strings.Contains(string(out), "seasons"), "YAML: %s", out)
+	out, err = json.Marshal(cfg)
+	c.NoError(err)
+	c.False(strings.Contains(string(out), "seasons"), "JSON: %s", out)
+
+	cfg.Seasons = []calendar.Season{{Name: "Year", StartMonth: 1, StartDay: 1, EndMonth: 1, EndDay: 10}}
+	out, err = yaml.Marshal(cfg)
+	c.NoError(err)
+	c.True(strings.Contains(string(out), "seasons:"), "YAML: %s", out)
+	var back calendar.Config
+	c.NoError(yaml.Unmarshal(out, &back))
+	c.Equal(cfg.Seasons, back.Seasons)
+	out, err = json.Marshal(cfg)
+	c.NoError(err)
+	c.True(strings.Contains(string(out), `"seasons"`), "JSON: %s", out)
+	back = calendar.Config{}
+	c.NoError(json.Unmarshal(out, &back))
+	c.Equal(cfg.Seasons, back.Seasons)
 }

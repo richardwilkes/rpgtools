@@ -102,7 +102,7 @@ type Config struct {
 	PreviousEra    string    `json:"previous_era,omitempty" yaml:"previous_era,omitempty"`
 	WeekDays       []string  `json:"weekdays"`
 	Months         []Month   `json:"months"`
-	Seasons        []Season  `json:"seasons,omitempty"`
+	Seasons        []Season  `json:"seasons,omitempty" yaml:"seasons,omitempty"`
 	DayZeroWeekDay int       `json:"day_zero_weekday" yaml:"day_zero_weekday"`
 }
 

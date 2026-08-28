@@ -15,6 +15,7 @@ import (
 	"io"
 	"math"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -27,10 +28,6 @@ import (
 var (
 	defaultCalendarLock sync.RWMutex
 	defaultCalendar     = Gregorian()
-	// "9/22/2017" or "9/22/2017 AD"
-	regexMMDDYYYY = regexp.MustCompile("([[:digit:]]+)/([[:digit:]]+)/(-?[[:digit:]]+) *([[:alpha:]]+)?")
-	// "September 22, 2017 AD", "September 22, 2017", "Sep 22, 2017 AD", or "Sep 22, 2017"
-	regexMonthDDYYYY = regexp.MustCompile("([[:alpha:]]+) *([[:digit:]]+), *(-?[[:digit:]]+) *([[:alpha:]]+)?")
 )
 
 // abbreviatedNameLength is the number of leading characters used to abbreviate a month or weekday name. The %m and %w
@@ -42,7 +39,9 @@ const abbreviatedNameLength = 3
 // Calendar holds the data for a calendar.
 type Calendar struct {
 	cfg            *Config
-	minDaysPerYear int // sum of every month's Days; a pure function of the immutable cfg, cached at construction
+	numericDate    *regexp.Regexp // "9/22/2017" or "9/22/2017 AD"; see Config.dateRegexes
+	namedDate      *regexp.Regexp // "September 22, 2017 AD", "September 22, 2017", "Sep 22, 2017 AD", or "Sep 22, 2017"
+	minDaysPerYear int            // sum of every month's Days; a pure function of the immutable cfg, cached at construction
 }
 
 // New creates a new Calendar from the given Config.
@@ -54,14 +53,53 @@ func New(cfg *Config) (*Calendar, error) {
 }
 
 // newCalendar wraps an already-validated (or built-in) Config, precomputing minDaysPerYear so Year and the date
-// accessors that lean on it do not re-sum every month on each call. The cfg is taken as-is and not cloned again;
-// callers pass a Config they own (New clones first, the built-ins pass a fresh literal).
+// accessors that lean on it do not re-sum every month on each call, and compiling the ParseDate patterns that depend on
+// the Config's month and era names. The cfg is taken as-is and not cloned again; callers pass a Config they own (New
+// clones first, the built-ins pass a fresh literal).
 func newCalendar(cfg *Config) *Calendar {
 	c := &Calendar{cfg: cfg}
 	for i := range cfg.Months {
 		c.minDaysPerYear += cfg.Months[i].Days
 	}
+	c.numericDate, c.namedDate = cfg.dateRegexes()
 	return c
+}
+
+// dateRegexes compiles the two patterns ParseDate recognizes, tailored to the Config's own month and era names so that
+// whatever Date.Format emits parses back. A generic word pattern cannot do that: Valid permits names containing spaces,
+// punctuation and non-ASCII letters (a month "New Moon", an era "A.D."), and a generic pattern captures only a fragment
+// of such a name, rejecting the month or, worse, silently dropping the era and with it the year's sign. Every name is
+// quoted literally and matched case-insensitively. The month group (1) also accepts each name's abbreviatedNameLength
+// prefix, which is what %m emits, leaving monthFromText to resolve it and to reject an ambiguous one. An era (group 4)
+// must be followed by the end of the text or a non-alphanumeric character so a label cannot match the start of a longer
+// word ("BC" inside "BCE"); when the Config names no era the group is present but can never match, so the parts a match
+// yields always have the same shape. Alternatives are ordered longest first so a name that is a prefix of another is
+// never preferred over the longer match.
+func (c *Config) dateRegexes() (numeric, named *regexp.Regexp) {
+	months := make([]string, 0, len(c.Months)*2)
+	for i := range c.Months {
+		months = append(months, c.Months[i].Name, xstrings.FirstN(c.Months[i].Name, abbreviatedNameLength))
+	}
+	era := "()"
+	if eras := alternation(c.Era, c.PreviousEra); eras != "" {
+		era = "(?: *(" + eras + ")(?:$|[^\\pL\\pN]))?"
+	}
+	numeric = regexp.MustCompile("(?i)([[:digit:]]+)/([[:digit:]]+)/(-?[[:digit:]]+)" + era)
+	named = regexp.MustCompile("(?i)(" + alternation(months...) + ") *([[:digit:]]+), *(-?[[:digit:]]+)" + era)
+	return numeric, named
+}
+
+// alternation joins the distinct, non-empty names into a regular expression alternation of literal matches, longest
+// first. It returns "" when there is nothing to match.
+func alternation(names ...string) string {
+	quoted := make([]string, 0, len(names))
+	for _, name := range names {
+		if name != "" {
+			quoted = append(quoted, regexp.QuoteMeta(name))
+		}
+	}
+	slices.SortStableFunc(quoted, func(a, b string) int { return len(b) - len(a) })
+	return strings.Join(slices.Compact(quoted), "|")
 }
 
 // Default returns the default Calendar that will be used if one isn't explicitly used (for example, if you create a
@@ -180,16 +218,20 @@ func (c *Calendar) yearToDaysWith(year, minDaysPerYear int) int {
 	return days
 }
 
-// ParseDate creates a new date from the specified text.
+// ParseDate creates a new date from the specified text, which may be embedded in surrounding prose. Two forms are
+// recognized, each optionally followed by one of the calendar's era names: the numeric ShortFormat ("9/22/2017",
+// "9/22/2017 AD") and the named LongFormat or MediumFormat ("September 22, 2017", "Sep 22, 2017 AD"), where the month
+// is any of the calendar's month names or its abbreviation as %m emits it, matched without regard to case.
 func (c *Calendar) ParseDate(in string) (Date, error) {
-	if parts := regexMMDDYYYY.FindStringSubmatch(in); parts != nil {
+	numeric, named := c.dateRegexes()
+	if parts := numeric.FindStringSubmatch(in); parts != nil {
 		month, err := strconv.Atoi(parts[1])
 		if err != nil {
 			return Date{cal: c}, errs.NewWithCausef(err, "invalid month text %q", parts[1])
 		}
 		return c.parseDate(month, parts[2], parts[3], parts[4])
 	}
-	if parts := regexMonthDDYYYY.FindStringSubmatch(in); parts != nil {
+	if parts := named.FindStringSubmatch(in); parts != nil {
 		month, err := c.monthFromText(parts[1])
 		if err != nil {
 			return Date{cal: c}, err
@@ -279,6 +321,16 @@ func (c *Calendar) resolveEraSuffix(year int, yearText, eraText string) (int, er
 		year = -year
 	}
 	return year, nil
+}
+
+// dateRegexes returns the ParseDate patterns for this calendar, falling back to the default calendar's for a nil or
+// zero-value Calendar, as config does.
+func (c *Calendar) dateRegexes() (numeric, named *regexp.Regexp) {
+	if c != nil && c.cfg != nil {
+		return c.numericDate, c.namedDate
+	}
+	def := Default()
+	return def.numericDate, def.namedDate
 }
 
 // MinDaysPerYear returns the minimum number of days in a year. The sum is computed once when the Calendar is built (see

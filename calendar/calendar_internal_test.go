@@ -81,13 +81,13 @@ func TestLeapYearSinceMatchesIs(t *testing.T) {
 		{Month: 1, Every: 3, Except: 9, Unless: 27},    // all tiers, different moduli
 		{Month: 1, Every: 5, Except: 25},               // another Except-only shape
 	} {
+		cfg.LeapYear = ly
+		cal, err := New(cfg)
+		c.NoError(err)
 		for year := -500; year <= 500; year++ {
 			if year == 0 {
 				continue
 			}
-			cfg.LeapYear = ly
-			cal, err := New(cfg)
-			c.NoError(err)
 			c.Equal(bruteSince(cal, year), cal.leapYearsSince(year), "Since(%d) for %+v", year, *ly)
 		}
 	}

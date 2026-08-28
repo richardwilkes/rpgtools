@@ -345,6 +345,14 @@ func TestMediumFormatRoundTripsThroughParse(t *testing.T) {
 	}
 }
 
+// Era labels that Valid accepts but that a single alphabetic word cannot match, used by the parse tests below.
+const (
+	dottedEra     = "A.D."
+	dottedPrevEra = "B.C."
+	wordyEra      = "Age of Light"
+	wordyPrevEra  = "Age of Dark"
+)
+
 // eraTestCalendar builds a small but valid calendar whose only interesting variation is its era pair.
 func eraTestCalendar(era, previousEra string) (*calendar.Calendar, error) {
 	return calendar.New(&calendar.Config{
@@ -397,7 +405,9 @@ func TestEraDisplayModel(t *testing.T) {
 // sides of the era model cannot drift apart.
 func TestEraRoundTripsThroughParse(t *testing.T) {
 	c := check.New(t)
-	for _, eras := range [][2]string{{"AD", "BC"}, {"AR", "AR"}, {"", ""}} {
+	// The last two pairs carry punctuation and spaces, which Valid permits and which the parse patterns must therefore
+	// match in full rather than as a generic single word.
+	for _, eras := range [][2]string{{"AD", "BC"}, {"AR", "AR"}, {"", ""}, {dottedEra, dottedPrevEra}, {wordyEra, wordyPrevEra}} {
 		cal, err := eraTestCalendar(eras[0], eras[1])
 		c.NoError(err)
 		for _, year := range []int{2017, 5, 1, -1, -5, -2017} {
@@ -546,6 +556,135 @@ func TestParseDate(t *testing.T) {
 	date, err = cal.ParseDate("9/22/2017 AD")
 	c.NoError(err)
 	c.Equal(cal.MustNewDate(9, 22, 2017), date)
+}
+
+// TestParseDateEraNamesBeyondSingleWord guards the era suffix against being matched as a generic alphabetic word. With
+// eras "A.D." and "B.C." the previous-era date 2/15/-5 renders as "2/15/5 B.C.", and a word-only pattern captured just
+// the "B", ignored it as unrecognized, and returned year +5 with no error. The patterns are now built from the
+// calendar's own era names, so any label Valid accepts round-trips with its sign intact.
+func TestParseDateEraNamesBeyondSingleWord(t *testing.T) {
+	c := check.New(t)
+	for _, tc := range []struct {
+		era, prev string
+		text      string
+		year      int
+		rendered  bool // text is exactly what the date renders as in "%N/%D/%y"
+	}{
+		{dottedEra, dottedPrevEra, "2/15/5 B.C.", -5, true},
+		{dottedEra, dottedPrevEra, "2/15/5 A.D.", 5, true},
+		{dottedEra, dottedPrevEra, "Febris 15, 5 B.C.", -5, false},
+		{dottedEra, dottedPrevEra, "2/15/5 b.c.", -5, false}, // era names match without regard to case
+		{wordyEra, wordyPrevEra, "2/15/5 Age of Dark", -5, true},
+		{wordyEra, wordyPrevEra, "Febris 15, 5 Age of Dark", -5, false},
+		{wordyEra, wordyPrevEra, "The battle of 2/15/5 Age of Dark, as told later", -5, false},
+		{wordyEra, wordyPrevEra, "2/15/5 Age of Light", 5, true},
+		// An era name is only recognized as a whole: a longer word that merely begins with it is not the era, so it
+		// is ignored like any other unrecognized suffix rather than silently flipping the year's sign.
+		{"AD", "BC", "2/15/5 BCE", 5, false},
+		{dottedEra, dottedPrevEra, "2/15/5 B.C.E.", 5, false},
+		{"AD", "BC", "2/15/5 BC.", -5, false}, // trailing punctuation does not stop the era from matching
+		{"AD", "BC", "2/15/5BC", -5, false},   // nor does the absence of a space, as before
+	} {
+		cal, err := eraTestCalendar(tc.era, tc.prev)
+		c.NoError(err)
+		want := cal.MustNewDate(2, 15, tc.year)
+		if tc.rendered {
+			c.Equal(tc.text, want.Format("%N/%D/%y"), "eras %q/%q year %d", tc.era, tc.prev, tc.year)
+		}
+		got, err := cal.ParseDate(tc.text)
+		c.NoError(err, "eras %q/%q: %q", tc.era, tc.prev, tc.text)
+		c.Equal(want, got, "eras %q/%q: %q", tc.era, tc.prev, tc.text)
+	}
+}
+
+// TestParseDateMonthNamesBeyondSingleWord guards the month name against being matched as a generic alphabetic word.
+// Valid permits month names with spaces, punctuation and non-ASCII letters, and every format that emits a month name
+// (LongFormat, FullFormat and the abbreviating MediumFormat) must parse back to the same date on such a calendar. The
+// issue's own example: with months "New Moon" and "Old Moon", "New Moon 5, 100" failed with 'invalid month text "Moon"'.
+func TestParseDateMonthNamesBeyondSingleWord(t *testing.T) {
+	c := check.New(t)
+	cal, err := calendar.New(&calendar.Config{
+		WeekDays: []string{"Firstday", "Lastday"},
+		Months: []calendar.Month{
+			{Name: "New Moon", Days: 30},
+			{Name: "Old Moon", Days: 30},
+			{Name: "Harvest's End", Days: 30},
+			{Name: "Frühling", Days: 30},
+		},
+	})
+	c.NoError(err)
+	date, err := cal.ParseDate("New Moon 5, 100")
+	c.NoError(err)
+	c.Equal(cal.MustNewDate(1, 5, 100), date)
+	for month := 1; month <= 4; month++ {
+		want := cal.MustNewDate(month, 5, 100)
+		for _, layout := range []string{calendar.LongFormat, calendar.FullFormat, calendar.MediumFormat} {
+			formatted := want.Format(layout)
+			var got calendar.Date
+			got, err = cal.ParseDate(formatted)
+			c.NoError(err, "month %d formatted as %q", month, formatted)
+			c.Equal(want, got, "month %d round-trip via %q", month, formatted)
+		}
+	}
+	// Dates remain extractable from prose, and the name matches without regard to case.
+	date, err = cal.ParseDate("It was Harvest's End 12, 100 when the caravan arrived.")
+	c.NoError(err)
+	c.Equal(cal.MustNewDate(3, 12, 100), date)
+	date, err = cal.ParseDate("old moon 5, 100")
+	c.NoError(err)
+	c.Equal(cal.MustNewDate(2, 5, 100), date)
+	// A fragment of a name is not a month.
+	_, err = cal.ParseDate("Moon 5, 100")
+	c.HasError(err)
+}
+
+// TestParseDateNamesWithRegexMetacharacters guards the quoting in the per-calendar parse patterns. Month and era names
+// are interpolated into a regular expression, so any metacharacters in them must be matched literally: a month named
+// ".*" must not become a wildcard that swallows the surrounding text, "(" must not break compilation, and "|" must not
+// split a name into two alternatives.
+func TestParseDateNamesWithRegexMetacharacters(t *testing.T) {
+	c := check.New(t)
+	var cal *calendar.Calendar
+	var err error
+	c.NotPanics(func() {
+		cal, err = calendar.New(&calendar.Config{
+			WeekDays: []string{"A", "B"},
+			Months: []calendar.Month{
+				{Name: ".*", Days: 30},
+				{Name: "(unbalanced", Days: 30},
+				{Name: "X|Bar", Days: 30},
+				{Name: `back\\slash [a-z]+ $^?`, Days: 30},
+			},
+			Era:         "A.D.",
+			PreviousEra: "(B|C)+",
+		})
+	})
+	c.NoError(err)
+	for month := 1; month <= 4; month++ {
+		want := cal.MustNewDate(month, 5, 100)
+		for _, layout := range []string{calendar.LongFormat, calendar.MediumFormat, "%M %D, %y"} {
+			formatted := want.Format(layout)
+			var got calendar.Date
+			got, err = cal.ParseDate(formatted)
+			c.NoError(err, "month %d formatted as %q", month, formatted)
+			c.Equal(want, got, "month %d round-trip via %q", month, formatted)
+		}
+	}
+	// Each metacharacter name matches only itself, never what it would mean as a pattern.
+	_, err = cal.ParseDate("anything 5, 100") // ".*" is not a wildcard
+	c.HasError(err)
+	_, err = cal.ParseDate("X 5, 100") // "X|Bar" is one name, not two
+	c.HasError(err)
+	_, err = cal.ParseDate("Bar 5, 100")
+	c.HasError(err)
+	_, err = cal.ParseDate("backslash 5, 100") // the literal backslash is required
+	c.HasError(err)
+	got, err := cal.ParseDate("1/5/100 BCB") // "(B|C)+" is a literal label, not a repeated group
+	c.NoError(err)
+	c.Equal(100, got.Year())
+	got, err = cal.ParseDate("1/5/100 (B|C)+")
+	c.NoError(err)
+	c.Equal(-100, got.Year())
 }
 
 func TestParseDateSharedEraSuffix(t *testing.T) {
