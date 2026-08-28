@@ -27,8 +27,15 @@ import (
 
 var (
 	defaultCalendarLock sync.RWMutex
-	defaultCalendar     = Gregorian()
+	defaultCalendar     *Calendar
 )
+
+// The default calendar is assigned in init rather than in its declaration: newCalendar computes each calendar's day
+// span through methods that fall back to Default for a nil Calendar, so a package-level initializer reaching Default
+// through Gregorian would form an initialization cycle.
+func init() {
+	defaultCalendar = Gregorian()
+}
 
 // abbreviatedNameLength is the number of leading characters used to abbreviate a month or weekday name. The %m and %w
 // format directives emit this many characters, and monthFromText accepts a month abbreviation of this length, so an
@@ -42,6 +49,8 @@ type Calendar struct {
 	numericDate    *regexp.Regexp // "9/22/2017" or "9/22/2017 AD"; see Config.dateRegexes
 	namedDate      *regexp.Regexp // "September 22, 2017 AD", "September 22, 2017", "Sep 22, 2017 AD", or "Sep 22, 2017"
 	minDaysPerYear int            // sum of every month's Days; a pure function of the immutable cfg, cached at construction
+	firstDay       int64          // Days of the earliest Date the calendar can represent; see Date.Add
+	lastDay        int64          // Days of the latest Date the calendar can represent; see Date.Add
 }
 
 // New creates a new Calendar from the given Config.
@@ -53,14 +62,18 @@ func New(cfg *Config) (*Calendar, error) {
 }
 
 // newCalendar wraps an already-validated (or built-in) Config, precomputing minDaysPerYear so Year and the date
-// accessors that lean on it do not re-sum every month on each call, and compiling the ParseDate patterns that depend on
-// the Config's month and era names. The cfg is taken as-is and not cloned again; callers pass a Config they own (New
-// clones first, the built-ins pass a fresh literal).
+// accessors that lean on it do not re-sum every month on each call, the span of days a Date on the calendar may occupy,
+// and the ParseDate patterns that depend on the Config's month and era names. The cfg is taken as-is and not cloned
+// again; callers pass a Config they own (New clones first, the built-ins pass a fresh literal).
 func newCalendar(cfg *Config) *Calendar {
 	c := &Calendar{cfg: cfg}
 	for i := range cfg.Months {
 		c.minDaysPerYear += cfg.Months[i].Days
 	}
+	// A Date is confined to the years IsValidYear accepts so that Date.Year stays within the int32 range on every
+	// target; maxDaysPerYear keeps that whole span within an int64 on every calendar.
+	c.firstDay = c.yearToDays(math.MinInt32)
+	c.lastDay = c.yearToDays(math.MaxInt32) + int64(c.Days(math.MaxInt32)) - 1
 	c.numericDate, c.namedDate = cfg.dateRegexes()
 	return c
 }
@@ -140,31 +153,28 @@ func (c *Calendar) MustNewDate(month, day, year int) Date {
 	return date
 }
 
-// NewDate creates a new date from the specified month, day and year. The year must be one IsValidYear accepts and
-// every day of it must lie within DaysLimit of 1/1/1; a year that fails either test is rejected with an error rather
-// than silently producing a saturated Date that is not the one requested (see YearInDaysLimit).
+// NewDate creates a new date from the specified month, day and year. The year must be one IsValidYear accepts; every
+// such year is representable in full on every calendar (see maxDaysPerYear).
 func (c *Calendar) NewDate(month, day, year int) (Date, error) {
 	if !IsValidYear(year) {
 		return Date{cal: c}, errs.Newf("year %d is invalid; must be in the range %d to %d, not including 0", year,
 			math.MinInt32, math.MaxInt32)
 	}
-	if !c.YearInDaysLimit(year) {
-		return Date{cal: c}, errs.Newf("year %d is invalid; it extends more than %d days from 1/1/1", year, DaysLimit)
-	}
 	cfg := c.config()
 	if month < 1 || month > len(cfg.Months) {
 		return Date{cal: c}, errs.Newf("month %d is invalid; must be in the range 1 to %d", month, len(cfg.Months))
 	}
-	days := cfg.Months[month-1].Days
+	monthDays := cfg.Months[month-1].Days
 	if c.IsLeapMonth(month) && c.IsLeapYear(year) {
-		days++
+		monthDays++
 	}
-	if day < 1 || day > days {
-		return Date{cal: c}, errs.Newf("day %d is invalid; must be in the range 1 to %d for month %d", day, days, month)
+	if day < 1 || day > monthDays {
+		return Date{cal: c}, errs.Newf("day %d is invalid; must be in the range 1 to %d for month %d", day, monthDays,
+			month)
 	}
-	days = c.yearToDays(year) + day - 1
+	days := c.yearToDays(int64(year)) + int64(day) - 1
 	for i := 1; i < month; i++ {
-		days += cfg.Months[i-1].Days
+		days += int64(cfg.Months[i-1].Days)
 	}
 	if c.IsLeapYear(year) && cfg.LeapYear.Month < month {
 		days++
@@ -172,33 +182,26 @@ func (c *Calendar) NewDate(month, day, year int) (Date, error) {
 	return c.NewDateByDays(days), nil
 }
 
-// IsValidYear returns true if the year is one that may be used.
+// IsValidYear returns true if the year is one that may be used: any year within the int32 range except 0, since there
+// is no year 0 (year -1 immediately precedes year 1). Confining years to that range keeps every Date's year within a
+// 32-bit int on any target, and bounds the day arithmetic (see maxDaysPerYear).
 func IsValidYear(year int) bool {
 	return year != 0 && year >= math.MinInt32 && year <= math.MaxInt32
 }
 
-// YearInDaysLimit reports whether every day of the year lies within the [-DaysLimit, DaysLimit] span a Date can
-// represent. Config.Valid caps the days in a year at math.MaxInt32 and IsValidYear caps the year magnitude at the same
-// value, so a year's first day is at most about 2^62 days from 1/1/1: past DaysLimit, but far short of overflowing an
-// int, so the comparison is safe. The whole year is required to fit, not just the requested day, so that any year
-// NewDate accepts can be walked month by month (as Text does) without a later month saturating.
-func (c *Calendar) YearInDaysLimit(year int) bool {
-	first := c.yearToDays(year)
-	return first >= -DaysLimit && first+c.Days(year)-1 <= DaysLimit
-}
-
-// NewDateByDays creates a new date from a number of days, with 0 representing the date 1/1/1.
-func (c *Calendar) NewDateByDays(days int) Date {
+// NewDateByDays creates a new date from a number of days, with 0 representing the date 1/1/1. The result saturates at
+// the calendar's earliest and latest representable days, as Date.Add does.
+func (c *Calendar) NewDateByDays(days int64) Date {
 	d := Date{cal: c}
 	return d.Add(days)
 }
 
-func (c *Calendar) yearToDays(year int) int {
-	return c.yearToDaysWith(year, c.MinDaysPerYear())
+func (c *Calendar) yearToDays(year int64) int64 {
+	return c.yearToDaysWith(year, int64(c.MinDaysPerYear()))
 }
 
-func (c *Calendar) yearToDaysWith(year, minDaysPerYear int) int {
-	var days int
+func (c *Calendar) yearToDaysWith(year, minDaysPerYear int64) int64 {
+	var days int64
 	if year > 1 {
 		days = (year - 1) * minDaysPerYear
 	} else if year < 0 {
@@ -242,7 +245,7 @@ func (c *Calendar) ParseDate(in string) (Date, error) {
 }
 
 func (c *Calendar) parseDate(month int, dayText, yearText, eraText string) (Date, error) {
-	year, err := strconv.Atoi(yearText)
+	year, err := strconv.ParseInt(yearText, 10, 64)
 	if err != nil {
 		return Date{cal: c}, errs.NewWithCausef(err, "invalid year text %q", yearText)
 	}
@@ -250,10 +253,17 @@ func (c *Calendar) parseDate(month int, dayText, yearText, eraText string) (Date
 	if err != nil {
 		return Date{cal: c}, errs.NewWithCausef(err, "invalid day text %q", dayText)
 	}
+	// The era is applied, and the range checked, before the year is narrowed to an int, which may be only 32 bits wide:
+	// year math.MinInt32 renders as "2147483648 BC", a magnitude that only fits once the previous-era suffix has
+	// restored its sign.
 	if year, err = c.resolveEraSuffix(year, yearText, eraText); err != nil {
 		return Date{cal: c}, err
 	}
-	return c.NewDate(month, day, year)
+	if year < math.MinInt32 || year > math.MaxInt32 {
+		return Date{cal: c}, errs.Newf("year %d is invalid; must be in the range %d to %d", year, math.MinInt32,
+			math.MaxInt32)
+	}
+	return c.NewDate(month, day, int(year))
 }
 
 // monthFromText resolves a month name to its 1-based index. A full-name match is preferred; failing that, a 3-letter
@@ -286,16 +296,17 @@ func (c *Calendar) monthFromText(text string) (int, error) {
 // resolveEraSuffix is its parse-side inverse. A negative year belongs to the previous era and a non-negative year to
 // the current era. When the two eras are distinct the era label carries the sign, so the magnitude is returned (a year
 // of -5 with eras "AD"/"BC" yields 5, "BC"); when the eras are empty or identical there is no distinct label to carry
-// the sign, so the signed year is returned unchanged (-5 with eras "AR"/"AR" yields -5, "AR").
-func (c *Calendar) eraForYear(year int) (displayYear int, era string) {
+// the sign, so the signed year is returned unchanged (-5 with eras "AR"/"AR" yields -5, "AR"). The display year is an
+// int64 because the magnitude of math.MinInt32 does not fit a 32-bit int.
+func (c *Calendar) eraForYear(year int) (displayYear int64, era string) {
 	cfg := c.config()
 	era = cfg.Era
 	if year < 0 {
 		era = cfg.PreviousEra
 	}
-	displayYear = year
+	displayYear = int64(year)
 	if year < 0 && era != "" && cfg.Era != cfg.PreviousEra {
-		displayYear = -year
+		displayYear = -displayYear
 	}
 	return displayYear, era
 }
@@ -306,8 +317,9 @@ func (c *Calendar) eraForYear(year int) (displayYear int, era string) {
 // but on a negative year it merely repeats the sign, and a current-era suffix on a negative year flatly contradicts it;
 // reject both rather than silently choosing an interpretation. An empty or unrecognized suffix is left alone so
 // ParseDate can still find dates embedded in surrounding text. yearText and eraText are the original matched text,
-// used only for the error messages.
-func (c *Calendar) resolveEraSuffix(year int, yearText, eraText string) (int, error) {
+// used only for the error messages. The year is an int64 so that a previous-era magnitude of 2147483648 can be
+// negated into math.MinInt32 before parseDate narrows it.
+func (c *Calendar) resolveEraSuffix(year int64, yearText, eraText string) (int64, error) {
 	cfg := c.config()
 	distinctEras := cfg.Era != cfg.PreviousEra
 	previousEraSuffix := eraText != "" && distinctEras && strings.EqualFold(cfg.PreviousEra, eraText)
@@ -362,13 +374,11 @@ func (c *Calendar) mostDaysInMonth() int {
 	return most
 }
 
-// Days returns the number of days contained in a specific year. Unlike IsLeapYear, the year is not range-checked:
-// Date.Year can legitimately report a year outside [math.MinInt32, math.MaxInt32] for a date built by NewDateByDays,
-// and the length of such a year follows the leap-year rule exactly as the internal date math treats it, so the result
-// always agrees with the distance between consecutive first-of-year dates.
+// Days returns the number of days contained in a specific year. The length follows the leap-year rule exactly as the
+// internal date math treats it, so the result always agrees with the distance between consecutive first-of-year dates.
 func (c *Calendar) Days(year int) int {
 	days := c.MinDaysPerYear()
-	if c.isLeapYear(year) {
+	if c.isLeapYear(int64(year)) {
 		days++
 	}
 	return days
@@ -377,15 +387,14 @@ func (c *Calendar) Days(year int) int {
 // IsLeapYear returns true if the year is a leap year. Note that valid years are constrained to not 0 and in the range
 // math.MinInt32 to math.MaxInt32, so an invalid year will always return false.
 func (c *Calendar) IsLeapYear(year int) bool {
-	return IsValidYear(year) && c.isLeapYear(year)
+	return IsValidYear(year) && c.isLeapYear(int64(year))
 }
 
-// isLeapYear reports the leap status of a year from the leap-year rule alone, without the IsValidYear range check the
-// public IsLeapYear applies. The internal date math (leapYearsSince and yearToDaysWith) needs the true leap status of
-// every year Date.Year's binary search probes, and that search ranges past the public [math.MinInt32, math.MaxInt32]
-// limits for a date whose year sits near them; treating those out-of-range probes as non-leap would undercount a
-// year's length and let the search settle on the wrong year.
-func (c *Calendar) isLeapYear(year int) bool {
+// isLeapYear reports the leap status of a year from the leap-year rule alone, for any int64 year. The internal date
+// math (leapYearsSince and yearToDaysWith) needs the true leap status of every year Date.Year's binary search probes,
+// and that search ranges past the int32 limits for a date whose year sits near them; treating those out-of-range
+// probes as non-leap would undercount a year's length and let the search settle on the wrong year.
+func (c *Calendar) isLeapYear(year int64) bool {
 	cfg := c.config()
 	if cfg.LeapYear == nil {
 		return false
@@ -393,19 +402,19 @@ func (c *Calendar) isLeapYear(year int) bool {
 	if year < 1 {
 		year++ // account for gap, since there is no year 0
 	}
-	if year%cfg.LeapYear.Every != 0 {
+	if year%int64(cfg.LeapYear.Every) != 0 {
 		return false
 	}
 	if cfg.LeapYear.Except == 0 {
 		return true
 	}
-	if year%cfg.LeapYear.Except != 0 {
+	if year%int64(cfg.LeapYear.Except) != 0 {
 		return true
 	}
 	if cfg.LeapYear.Unless == 0 {
 		return false
 	}
-	return year%cfg.LeapYear.Unless == 0
+	return year%int64(cfg.LeapYear.Unless) == 0
 }
 
 // IsLeapMonth returns true if the month is the leap month.
@@ -414,9 +423,9 @@ func (c *Calendar) IsLeapMonth(month int) bool {
 }
 
 // leapYearsSince returns the number of leap years that have occurred between year 1 and the specified year, exclusive.
-// It counts the true leap years for any year, including those outside the public valid range, because Date.Year's
+// It counts the true leap years for any int64 year, including those outside the int32 range, because Date.Year's
 // search probes years beyond it (see isLeapYear).
-func (c *Calendar) leapYearsSince(year int) int {
+func (c *Calendar) leapYearsSince(year int64) int64 {
 	if c.config().LeapYear == nil {
 		return 0
 	}
@@ -443,13 +452,13 @@ func (c *Calendar) leapYearsSince(year int) int {
 // negative years via their shifted magnitude. n must not be negative. Config.Valid() guarantees every multiple of
 // Except is a multiple of Every and every multiple of Unless is a multiple of Except, so dividing counts each tier
 // independently.
-func (c *Calendar) countLeaps(n int) int {
+func (c *Calendar) countLeaps(n int64) int64 {
 	cfg := c.config()
-	count := n / cfg.LeapYear.Every
+	count := n / int64(cfg.LeapYear.Every)
 	if cfg.LeapYear.Except != 0 {
-		count -= n / cfg.LeapYear.Except
+		count -= n / int64(cfg.LeapYear.Except)
 		if cfg.LeapYear.Unless != 0 {
-			count += n / cfg.LeapYear.Unless
+			count += n / int64(cfg.LeapYear.Unless)
 		}
 	}
 	return count

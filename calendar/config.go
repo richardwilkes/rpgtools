@@ -12,18 +12,32 @@ package calendar
 
 import (
 	"fmt"
-	"math"
 	"slices"
 	"strings"
 
 	"github.com/richardwilkes/toolbox/v2/errs"
 )
 
-// maxDaysPerYear bounds the total number of days a year may contain: the sum of every month's Days. The date
-// arithmetic multiplies the days-per-year by a year magnitude of up to math.MaxInt32 (the widest span IsValidYear
-// permits), so keeping the sum at or below this value guarantees those products -- and the leap-day counts layered on
-// top -- stay within an int rather than overflowing and silently corrupting the resulting date.
-const maxDaysPerYear = math.MaxInt32
+// maxDaysPerYear bounds the number of days in the longest year a calendar may have: the sum of every month's Days, plus
+// one for the leap day when the calendar has a leap rule. Years are confined to the int32 range, so the earliest day a
+// Date can occupy is the first day of year math.MinInt32 and the latest is the last day of year math.MaxInt32. On a
+// calendar at this cap those lie at most 2^61 days before 1/1/1 (exactly that on a leap-free calendar) and
+// 2^61 - 2^30 - 1 days after it, even with the densest leap rule Valid allows (every second year). Both sit far short
+// of overflowing an int64 and leave Date.Year's search bounds room to probe past the int32 limits, so every year
+// IsValidYear accepts is representable in full on every calendar Valid accepts. The cap also keeps every
+// day-within-a-year value below 2^31, so those are plain ints throughout the package with no risk of overflow on a
+// 32-bit target.
+const maxDaysPerYear = 1 << 30
+
+// maxWeekDays, maxMonths and maxSeasons bound the number of entries a Config may carry in each of its lists. Real
+// calendars use a handful of each; the caps keep a pathological Config from making every date resolution, ParseDate
+// pattern and text rendering scale with an absurd count, and keep the zero-padded month of the %n directive to two
+// digits.
+const (
+	maxWeekDays = 99
+	maxMonths   = 99
+	maxSeasons  = 99
+)
 
 var (
 	absalom   = newPathfinderCalendar("AR")
@@ -95,7 +109,8 @@ type LeapYear struct {
 
 // Config holds the configuration data for a Calendar. Seasons may be empty. A season whose start falls after its end is
 // permitted: it is interpreted as wrapping the year boundary (see Date.Season). Seasons are likewise permitted to
-// overlap one another or to leave gaps in the year; neither is treated as an error.
+// overlap one another or to leave gaps in the year; neither is treated as an error. A Config may hold at most 99 week
+// days, 99 months and 99 seasons.
 type Config struct {
 	LeapYear       *LeapYear `json:"leapyear,omitempty" yaml:",omitempty"`
 	Era            string    `json:"era,omitempty" yaml:",omitempty"`
@@ -127,6 +142,9 @@ func (c *Config) Valid() error {
 	if len(c.WeekDays) == 0 {
 		return errs.New("must have at least one week day")
 	}
+	if len(c.WeekDays) > maxWeekDays {
+		return errs.Newf("may not have more than %d week days", maxWeekDays)
+	}
 	for _, weekDay := range c.WeekDays {
 		if weekDay == "" {
 			return errs.New("week day names must not be empty")
@@ -141,6 +159,9 @@ func (c *Config) Valid() error {
 	if len(c.Months) == 0 {
 		return errs.New("must have at least one month")
 	}
+	if len(c.Months) > maxMonths {
+		return errs.Newf("may not have more than %d months", maxMonths)
+	}
 	totalDays := 0
 	for i := range c.Months {
 		if c.Months[i].Name == "" {
@@ -152,10 +173,8 @@ func (c *Config) Valid() error {
 		if c.Months[i].Days < 1 {
 			return errs.New("months must contain at least 1 day")
 		}
-		// Cap the running total of days per year. yearToDaysWith and NewDate multiply this sum by a year magnitude of
-		// up to math.MaxInt32, so a larger sum would overflow an int and silently corrupt every date. The check is
-		// written against the remaining budget so a single huge Days value cannot itself overflow the sum before the
-		// limit is caught.
+		// Cap the running total of days per year (see maxDaysPerYear). The check is written against the remaining
+		// budget so a single huge Days value cannot itself overflow the sum before the limit is caught.
 		if c.Months[i].Days > maxDaysPerYear-totalDays {
 			return errs.Newf("the total number of days across all months may not exceed %d", maxDaysPerYear)
 		}
@@ -164,6 +183,12 @@ func (c *Config) Valid() error {
 	if c.LeapYear != nil {
 		if c.LeapYear.Month < 1 || c.LeapYear.Month > len(c.Months) {
 			return errs.New("LeapYear.Month must specify a valid month")
+		}
+		// The leap day is one more day on top of the month total, so a calendar with a leap rule must leave room for
+		// it under the cap (see maxDaysPerYear).
+		if totalDays >= maxDaysPerYear {
+			return errs.Newf("the total number of days across all months, plus the leap day, may not exceed %d",
+				maxDaysPerYear)
 		}
 		if c.LeapYear.Every < 2 {
 			return errs.New("LeapYear.Every may not be less than 2")
@@ -187,6 +212,9 @@ func (c *Config) Valid() error {
 				return errs.New("LeapYear.Unless must be a multiple of LeapYear.Except")
 			}
 		}
+	}
+	if len(c.Seasons) > maxSeasons {
+		return errs.Newf("may not have more than %d seasons", maxSeasons)
 	}
 	for i := range c.Seasons {
 		if c.Seasons[i].Name == "" {

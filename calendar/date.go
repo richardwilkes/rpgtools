@@ -26,14 +26,18 @@ const (
 	ShortFormat  = "%N/%D/%Y"
 )
 
-// DaysLimit is the limit to how many days a Date can represent on either side of the 1/1/1 date of a Calendar.
-const DaysLimit = 1 << 61
-
 // Date holds a calendar date. If the date was not initialized (i.e. not obtained from a Calendar), the default calendar
-// will be used when doing any operation that needs to know which calendar it was a part of.
+// will be used when doing any operation that needs to know which calendar it was a part of. Day counts (Days, Add and
+// NewDateByDays) are int64; everything else is an int, kept within 32 bits on every target by IsValidYear for years
+// and by the caps Config.Valid enforces for months, days and weekdays.
+//
+// Compare Dates with Equal rather than ==. Date is a comparable struct, but == also compares the calendar reference a
+// Date carries, and a zero Date{} carries none while the same day obtained from Default() (or from Add on a zero Date)
+// carries a reference to the default calendar, so == reports the two as different even though both represent 1/1/1 on
+// the default calendar and format identically.
 type Date struct {
 	cal  *Calendar
-	days int
+	days int64
 }
 
 // calendar returns the calendar associated with the date, falling back to Default for a zero-value Date that was never
@@ -45,32 +49,52 @@ func (date Date) calendar() *Calendar {
 	return date.cal
 }
 
-// Add delta days to the date and return a new Date, saturating to [-DaysLimit, DaysLimit] on overflow or when the sum
-// exceeds the range.
-func (date Date) Add(delta int) Date {
+// Add delta days to the date and return a new Date. The result saturates at the calendar's earliest and latest
+// representable days -- the first day of year math.MinInt32 and the last day of year math.MaxInt32 -- on overflow or
+// when the sum would fall outside that span. Confining every Date to the years IsValidYear accepts is what keeps Year
+// within the int32 range on every target.
+func (date Date) Add(delta int64) Date {
+	cal := date.calendar()
 	days := date.days + delta
-	if days > DaysLimit || (date.days > 0 && delta > 0 && days < 0) {
-		days = DaysLimit
-	} else if days < -DaysLimit || (date.days < 0 && delta < 0 && days > 0) {
-		days = -DaysLimit
+	// Test for the sum having wrapped around int64 before comparing its magnitude: a wrapped sum lands on the far side
+	// of zero, so checking it against the limits first would saturate toward the wrong one.
+	switch {
+	case delta > 0 && days < date.days: // wrapped past math.MaxInt64
+		days = cal.lastDay
+	case delta < 0 && days > date.days: // wrapped past math.MinInt64
+		days = cal.firstDay
+	case days > cal.lastDay:
+		days = cal.lastDay
+	case days < cal.firstDay:
+		days = cal.firstDay
 	}
 	return Date{
-		cal:  date.calendar(),
+		cal:  cal,
 		days: days,
 	}
 }
 
 // Days is the number of days since 1/1/1 in the calendar. Note that the value -1 refers to the last day of the year -1,
 // not year 0, as there is no year 0.
-func (date Date) Days() int {
+func (date Date) Days() int64 {
 	return date.days
 }
 
-// Year returns the year of the date.
+// Equal reports whether the two dates represent the same day on the same calendar. Unlike ==, a zero Date{} compares
+// equal to the same day obtained from Default(), since both resolve to the default calendar. Dates on different
+// calendars are never equal, even when their Days match.
+func (date Date) Equal(other Date) bool {
+	return date.days == other.days && date.calendar() == other.calendar()
+}
+
+// Year returns the year of the date. Add confines every Date to the years IsValidYear accepts, so the year always lies
+// within the int32 range, even where int is wider.
 func (date Date) Year() int {
 	cal := date.calendar()
-	minDays := cal.MinDaysPerYear()
-	lo, hi := 1, date.days/minDays+1
+	minDays := int64(cal.MinDaysPerYear())
+	// The search works in int64 because its upper bound can lie past math.MaxInt32 for a date near the end of the span
+	// even though the year it settles on never does.
+	lo, hi := int64(1), date.days/minDays+1
 	if date.days < 0 {
 		lo, hi = date.days/minDays-1, -1
 	}
@@ -82,7 +106,7 @@ func (date Date) Year() int {
 			hi = mid - 1
 		}
 	}
-	return lo
+	return int(lo)
 }
 
 // resolve returns the year, month (1-based), day within the month (1-based), and the number of days in that month from
@@ -93,16 +117,16 @@ func (date Date) resolve() (year, month, dayInMonth, daysInMonth int) {
 	cfg := cal.config()
 	year = date.Year()
 	isLeapYear := cal.IsLeapYear(year)
-	days := 1 + date.days - cal.yearToDays(year)
+	days := 1 + date.days - cal.yearToDays(int64(year)) // the day within the year, which maxDaysPerYear keeps in an int
 	for i := range cfg.Months {
 		amt := cfg.Months[i].Days
 		if isLeapYear && cal.IsLeapMonth(i+1) {
 			amt++
 		}
-		if days <= amt {
-			return year, i + 1, days, amt
+		if days <= int64(amt) {
+			return year, i + 1, int(days), amt
 		}
-		days -= amt
+		days -= int64(amt)
 	}
 	// If this is reached, the algorithm is wrong.
 	panic("unable to determine month") // @allow
@@ -121,7 +145,7 @@ func (date Date) MonthName() string {
 
 // DayInYear returns the day within the year of the date. Note that the first day is represented by a 1, not 0.
 func (date Date) DayInYear() int {
-	return 1 + date.days - date.calendar().yearToDays(date.Year())
+	return int(1 + date.days - date.calendar().yearToDays(int64(date.Year())))
 }
 
 // DayInMonth returns the day within the month of the date. Note that the first day is represented by a 1, not 0.
@@ -139,11 +163,12 @@ func (date Date) DaysInMonth() int {
 // WeekDay returns the weekday of the date.
 func (date Date) WeekDay() int {
 	cfg := date.calendar().config()
-	weekday := date.days % len(cfg.WeekDays)
+	weekDays := int64(len(cfg.WeekDays))
+	weekday := date.days % weekDays
 	if date.days < 0 {
-		weekday += len(cfg.WeekDays)
+		weekday += weekDays
 	}
-	return (weekday + cfg.DayZeroWeekDay) % len(cfg.WeekDays)
+	return int((weekday + int64(cfg.DayZeroWeekDay)) % weekDays)
 }
 
 // WeekDayName returns the name of the weekday of the date.
@@ -218,7 +243,8 @@ func (date Date) Format(layout string) string {
 }
 
 // WriteFormat writes a formatted version of the date to the writer. The layout is parsed for directives and anything
-// that is not a directive is passed through unchanged. Valid directives:
+// that is not a directive is passed through unchanged, including a % that is not followed by one of the directive
+// characters below (so "50% off" and a trailing % are emitted as written). Valid directives:
 //
 //	%W  Full weekday, e.g. 'Friday'
 //	%w  Short weekday, e.g. 'Fri'
@@ -294,12 +320,17 @@ func (date Date) WriteFormat(w io.Writer, layout string) {
 				fmt.Fprint(w, year)
 			case '%':
 				fmt.Fprint(w, "%")
+			default: // not a directive: pass the % and the character that followed it through unchanged
+				fmt.Fprintf(w, "%%%c", r)
 			}
 		case r == '%':
 			cmd = true
 		default:
 			fmt.Fprintf(w, "%c", r)
 		}
+	}
+	if cmd { // a trailing % has nothing to introduce, so it is not a directive either
+		fmt.Fprint(w, "%")
 	}
 }
 
@@ -328,10 +359,10 @@ func (date Date) textCalendarMonth(w io.Writer, width int) {
 		fmt.Fprint(w, xstrings.FirstN(weekday, 1))
 	}
 	// Step back to the first of the month from the date itself rather than rebuilding it through NewDate, which would
-	// reject a year that straddles DaysLimit even though a Date within it is obtainable from NewDateByDays.
-	firstDay := date.Add(1 - dayInMonth)
+	// repeat the year lookup; every day of the month lies within the calendar's span, so this cannot saturate.
+	firstDay := date.Add(int64(1 - dayInMonth))
 	for i := 1; i <= maximum; i++ {
-		weekDay := firstDay.Add(i - 1).WeekDay()
+		weekDay := firstDay.Add(int64(i - 1)).WeekDay()
 		if i == 1 || weekDay == 0 {
 			fmt.Fprint(w, "\n")
 		}

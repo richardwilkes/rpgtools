@@ -59,50 +59,38 @@ func TestNewDate(t *testing.T) {
 	c.HasError(err)
 }
 
-func TestNewDateRejectsYearBeyondDaysLimit(t *testing.T) {
+// TestNewDateAcceptsEveryInt32Year verifies that every year IsValidYear accepts is representable in full on the
+// calendars with the longest years Config.Valid allows, and pins where their extreme days fall: maxDaysPerYear is
+// chosen so that even these stay within 2^61 of 1/1/1. NewDate once rejected years that ran past a fixed day limit on
+// such calendars, so a valid int32 year was not always a valid date.
+func TestNewDateAcceptsEveryInt32Year(t *testing.T) {
 	c := check.New(t)
-	// A single month of math.MaxInt32 days is the longest year Config.Valid accepts, so its years reach DaysLimit while
-	// still inside the int32 range IsValidYear permits. NewDate previously built such a date through NewDateByDays,
-	// which saturates, and returned the saturated date with a nil error. Year math.MaxInt32 starts
-	// (MaxInt32-1)*MaxInt32 days after 1/1/1, far past DaysLimit.
-	cal, err := calendar.New(&calendar.Config{
-		WeekDays: []string{"A"},
-		Months:   []calendar.Month{{Name: "Only", Days: math.MaxInt32}},
-	})
-	c.NoError(err)
-	_, err = cal.NewDate(1, 1, math.MaxInt32)
-	c.HasError(err)
-	_, err = cal.NewDate(1, 1, math.MinInt32)
-	c.HasError(err)
-
-	// The last year that fits entirely within DaysLimit is accepted in full, and the year after it -- which begins
-	// inside the limit but ends past it -- is rejected outright so that every accepted year can be walked end to end.
-	limitYear := calendar.DaysLimit / math.MaxInt32 // 2^30: the last whole year on either side of 1/1/1
-	d, err := cal.NewDate(1, math.MaxInt32, limitYear)
-	c.NoError(err)
-	c.Equal(limitYear*math.MaxInt32-1, d.Days())
-	c.Equal(limitYear, d.Year())
-	c.Equal(math.MaxInt32, d.DayInMonth())
-	_, err = cal.NewDate(1, 1, limitYear+1)
-	c.HasError(err)
-	d, err = cal.NewDate(1, 1, -limitYear)
-	c.NoError(err)
-	c.Equal(-limitYear*math.MaxInt32, d.Days())
-	c.Equal(-limitYear, d.Year())
-	c.Equal(1, d.DayInMonth())
-	_, err = cal.NewDate(1, math.MaxInt32, -limitYear-1)
-	c.HasError(err)
-
-	// A Date obtained from NewDateByDays can still sit in the straddling year NewDate rejects; rendering it must not
-	// panic now that the month text no longer rebuilds the first of the month through NewDate.
-	d = cal.NewDateByDays(calendar.DaysLimit)
-	c.Equal(limitYear+1, d.Year())
-	c.NotPanics(func() { _ = d.Format(calendar.ShortFormat) })
-	c.Equal("1/1073741825/1073741825", d.Format(calendar.ShortFormat))
-
-	// Ordinary calendars never get near DaysLimit inside the int32 year range, so the extremes remain accepted.
+	for _, tc := range []struct {
+		leap        bool
+		first, last int64
+	}{
+		{false, -1 << 61, 1<<61 - 1<<30 - 1},
+		{true, -1<<61 + 1<<30, 1<<61 - 1<<31 - 1},
+	} {
+		cal := maximalCalendar(c, tc.leap)
+		first, err := cal.NewDate(1, 1, math.MinInt32)
+		c.NoError(err, "leap=%t", tc.leap)
+		c.Equal(tc.first, first.Days(), "leap=%t", tc.leap)
+		c.Equal(math.MinInt32, first.Year(), "leap=%t", tc.leap)
+		c.Equal(first, cal.NewDateByDays(math.MinInt64), "leap=%t", tc.leap)
+		last, err := cal.NewDate(1, cal.Days(math.MaxInt32), math.MaxInt32)
+		c.NoError(err, "leap=%t", tc.leap)
+		c.Equal(tc.last, last.Days(), "leap=%t", tc.leap)
+		c.Equal(math.MaxInt32, last.Year(), "leap=%t", tc.leap)
+		c.Equal(cal.Days(math.MaxInt32), last.DayInMonth(), "leap=%t", tc.leap)
+		c.Equal(last, cal.NewDateByDays(math.MaxInt64), "leap=%t", tc.leap)
+		// The day past either end does not exist: stepping there saturates.
+		c.Equal(first, first.Add(-1), "leap=%t", tc.leap)
+		c.Equal(last, last.Add(1), "leap=%t", tc.leap)
+	}
+	// Ordinary calendars are nowhere near these extremes; the int32 limits remain accepted.
 	for _, ordinary := range []*calendar.Calendar{calendar.Gregorian(), calendar.PathfinderAbsalomReckoning()} {
-		_, err = ordinary.NewDate(1, 1, math.MaxInt32)
+		_, err := ordinary.NewDate(1, 1, math.MaxInt32)
 		c.NoError(err)
 		_, err = ordinary.NewDate(1, 1, math.MinInt32)
 		c.NoError(err)
@@ -141,7 +129,7 @@ func TestYear(t *testing.T) {
 func TestYearLargeDays(t *testing.T) {
 	c := check.New(t)
 	cal := calendar.Gregorian()
-	for _, days := range []int{math.MaxInt32, math.MaxInt32 - 2, math.MinInt32, math.MinInt32 + 2} {
+	for _, days := range []int64{math.MaxInt32, math.MaxInt32 - 2, math.MinInt32, math.MinInt32 + 2} {
 		year := cal.NewDateByDays(days).Year()
 		c.True(year != 0, "year is never 0 (days=%d)", days)
 		c.True(cal.MustNewDate(1, 1, year).Days() <= days, "1/1/%d must start on or before days=%d", year, days)
@@ -153,28 +141,35 @@ func TestYearLargeDays(t *testing.T) {
 	}
 }
 
-// TestYearInt64Extremes guards the overflow-safe search bounds in Year(). A Date.Days value within a year of the int64
-// limits once drove the bound arithmetic (and the yearToDaysWith probe at that bound) to overflow, so Year() returned a
-// wildly wrong, even sign-flipped, result. checkUsable now guarantees minDays >= 2 and the search bounds are kept as
-// tight as correctness allows, so the search never probes a year whose day count overflows. These cases use a minimal
-// two-day, no-leap calendar (minDays == 2): year y then spans days (y-1)*2 .. y*2-1 for y > 0 and y*2 .. (y+1)*2-1 for
-// y < 0, which pins the expected year at each extreme.
-func TestYearInt64Extremes(t *testing.T) {
+// TestYearSaturatesAtInt32Bounds guards the overflow-safe search bounds in Year() and the confinement of every Date to
+// the years IsValidYear accepts. A Date.Days value within a year of the int64 limits once drove the bound arithmetic
+// (and the yearToDaysWith probe at that bound) to overflow, so Year() returned a wildly wrong, even sign-flipped,
+// result. Date.Add (and so NewDateByDays) now saturates at the last day of year math.MaxInt32 and the first day of
+// year math.MinInt32, far below the int64 limits even on a calendar whose year is a single day, and the search bounds
+// are kept as tight as correctness allows, so the search never probes a year whose day count overflows and never
+// settles on a year outside the int32 range. These cases use a minimal two-day, no-leap calendar (minDays == 2): year y
+// then spans days (y-1)*2 .. y*2-1 for y > 0 and y*2 .. (y+1)*2-1 for y < 0, which pins the expected day count at each
+// extreme.
+func TestYearSaturatesAtInt32Bounds(t *testing.T) {
 	c := check.New(t)
 	cal, err := calendar.New(&calendar.Config{
 		WeekDays: []string{"A", "B"},
 		Months:   []calendar.Month{{Name: "First", Days: 1}, {Name: "Second", Days: 1}},
 	})
 	c.NoError(err)
-	// This should saturate at 1 + DaysLimit / 2, or 1,152,921,504,606,846,977.
-	c.Equal(1_152_921_504_606_846_977, cal.NewDateByDays(math.MaxInt64).Year())
-	// This should saturate at -DaysLimit / 2, or -1,152,921,504,606,846,976.
-	c.Equal(-1_152_921_504_606_846_976, cal.NewDateByDays(math.MinInt64).Year())
-	// Year must stay non-decreasing in Days right at the limits, where the off-by-one used to appear.
-	for _, base := range []int{math.MaxInt, math.MinInt + 5} {
-		for off := 1; off <= 5; off++ {
-			earlier := cal.NewDateByDays(base - off).Year()
-			later := cal.NewDateByDays(base - off + 1).Year()
+	last := cal.NewDateByDays(math.MaxInt64)
+	c.Equal(int64(math.MaxInt32)*2-1, last.Days())
+	c.Equal(math.MaxInt32, last.Year())
+	c.Equal(last, cal.MustNewDate(2, 1, math.MaxInt32))
+	first := cal.NewDateByDays(math.MinInt64)
+	c.Equal(int64(math.MinInt32)*2, first.Days())
+	c.Equal(math.MinInt32, first.Year())
+	c.Equal(first, cal.MustNewDate(1, 1, math.MinInt32))
+	// Year must stay non-decreasing in Days right up to the limits, where the off-by-one used to appear.
+	for _, base := range []int64{last.Days() - 5, first.Days()} {
+		for off := int64(0); off <= 5; off++ {
+			earlier := cal.NewDateByDays(base + off).Year()
+			later := cal.NewDateByDays(base + off + 1).Year()
 			c.True(earlier <= later, "Year must be non-decreasing in Days near %d (off=%d): %d > %d",
 				base, off, earlier, later)
 		}
@@ -352,6 +347,23 @@ const (
 	wordyEra      = "Age of Light"
 	wordyPrevEra  = "Age of Dark"
 )
+
+// maximalCalendar builds a calendar with a single month holding the most days Config.Valid accepts, with or without a
+// leap rule (every second year, the densest allowed). Its years are the longest possible, so its first day of year
+// math.MinInt32 and last day of year math.MaxInt32 are the farthest any Date can lie from 1/1/1.
+func maximalCalendar(c check.Checker, leap bool) *calendar.Calendar {
+	cfg := &calendar.Config{
+		WeekDays: []string{"A"},
+		Months:   []calendar.Month{{Name: "Only", Days: 1 << 30}},
+	}
+	if leap {
+		cfg.Months[0].Days--
+		cfg.LeapYear = &calendar.LeapYear{Month: 1, Every: 2}
+	}
+	cal, err := calendar.New(cfg)
+	c.NoError(err)
+	return cal
+}
 
 // eraTestCalendar builds a small but valid calendar whose only interesting variation is its era pair.
 func eraTestCalendar(era, previousEra string) (*calendar.Calendar, error) {
@@ -835,4 +847,156 @@ func TestUnmarshaling(t *testing.T) {
 	target = cal.MustNewDate(9, 22, 2017)
 	c.NoError(date.UnmarshalText([]byte("9/22/2017 AR")))
 	c.Equal(target, date)
+}
+
+// TestAddSaturates exercises Date.Add's documented saturation contract directly, in both directions. A Date is
+// confined to the years IsValidYear accepts, so the limits are the first day of year math.MinInt32 and the last day of
+// year math.MaxInt32 on the date's own calendar. A sum that wraps around int64 lands on the far side of zero, and Add
+// once compared that wrapped sum against the limit before checking for the wrap, so a negative overflow saturated at
+// the upper limit rather than the lower.
+func TestAddSaturates(t *testing.T) {
+	c := check.New(t)
+	cal := calendar.Gregorian()
+	c.Equal(int64(10), cal.NewDateByDays(3).Add(7).Days())
+	c.Equal(int64(-4), cal.NewDateByDays(3).Add(-7).Days())
+	c.Equal(int64(5), calendar.Date{}.Add(5).Days())
+
+	// The limits themselves are representable; one day past either is not.
+	last := cal.MustNewDate(12, 31, math.MaxInt32).Days()
+	first := cal.MustNewDate(1, 1, math.MinInt32).Days()
+	c.Equal(last, cal.NewDateByDays(last-1).Add(1).Days())
+	c.Equal(last, cal.NewDateByDays(last).Add(1).Days())
+	c.Equal(last, cal.NewDateByDays(0).Add(last+1).Days())
+	c.Equal(first, cal.NewDateByDays(first+1).Add(-1).Days())
+	c.Equal(first, cal.NewDateByDays(first).Add(-1).Days())
+	c.Equal(first, cal.NewDateByDays(0).Add(first-1).Days())
+
+	// A sum that wraps around int64 saturates toward the sign of the delta, not the sign of the wrapped result.
+	c.Equal(last, cal.NewDateByDays(1).Add(math.MaxInt64).Days())
+	c.Equal(last, cal.NewDateByDays(last).Add(math.MaxInt64).Days())
+	c.Equal(first, cal.NewDateByDays(-1).Add(math.MinInt64).Days())
+	c.Equal(first, cal.NewDateByDays(first).Add(math.MinInt64).Days())
+
+	// A delta large enough to cross the whole span without wrapping saturates at the far limit.
+	c.Equal(first, cal.NewDateByDays(last).Add(math.MinInt64).Days())
+	c.Equal(last, cal.NewDateByDays(first).Add(math.MaxInt64).Days())
+
+	// The limits belong to the calendar: one with a different leap rule ends year math.MaxInt32 on a different day
+	// count, but still saturates at 12/31 of that year.
+	other := calendar.PathfinderAbsalomReckoning()
+	c.True(other.NewDateByDays(math.MaxInt64).Days() != last)
+	for _, each := range []*calendar.Calendar{cal, other} {
+		c.Equal("12/31/2147483647", each.NewDateByDays(math.MaxInt64).Format("%N/%D/%z"))
+		c.Equal("1/1/-2147483648", each.NewDateByDays(math.MinInt64).Format("%N/%D/%z"))
+	}
+
+	// The calendar with the longest years Config.Valid allows saturates at the farthest days any Date can reach.
+	huge := maximalCalendar(c, false)
+	c.Equal(int64(-1<<61), huge.NewDateByDays(math.MinInt64).Days())
+	c.Equal(int64(-1<<61), huge.NewDateByDays(-1).Add(math.MinInt64).Days())
+	c.Equal(math.MinInt32, huge.NewDateByDays(math.MinInt64).Year())
+	c.Equal(int64(1<<61-1<<30-1), huge.NewDateByDays(math.MaxInt64).Days())
+	c.Equal(math.MaxInt32, huge.NewDateByDays(math.MaxInt64).Year())
+}
+
+// TestDatesConfinedToValidYears verifies that no Date can leave the years IsValidYear accepts, which is what lets Year
+// return an int32: stepping past the last day of year math.MaxInt32 or before the first day of year math.MinInt32
+// saturates at that boundary day, and the boundary days resolve, format, parse back and render without panicking.
+// Dates beyond the int32 years were once reachable through Add, and their leap status was then misjudged by the
+// range-checked IsLeapYear, so 2/29 of year 2^31 rendered as 3/1 and its last day panicked with "unable to determine
+// month".
+func TestDatesConfinedToValidYears(t *testing.T) {
+	c := check.New(t)
+	for _, cal := range []*calendar.Calendar{calendar.Gregorian(), calendar.PathfinderAbsalomReckoning()} {
+		last := cal.MustNewDate(12, 31, math.MaxInt32)
+		c.Equal(last, last.Add(1))
+		c.Equal(last, last.Add(60))
+		c.Equal(last, last.Add(366))
+		c.Equal(math.MaxInt32, last.Add(1).Year())
+		c.Equal(last.Days(), cal.NewDateByDays(math.MaxInt64).Days())
+		first := cal.MustNewDate(1, 1, math.MinInt32)
+		c.Equal(first, first.Add(-1))
+		c.Equal(first, first.Add(-60))
+		c.Equal(first, first.Add(-366))
+		c.Equal(math.MinInt32, first.Add(-1).Year())
+		c.Equal(first.Days(), cal.NewDateByDays(math.MinInt64).Days())
+		for _, d := range []calendar.Date{last, first} {
+			text := d.Format(calendar.ShortFormat)
+			c.NotPanics(func() {
+				c.True(d.Month() >= 1 && d.Month() <= 12, "month of %s", text)
+				c.True(d.DayInMonth() >= 1 && d.DayInMonth() <= d.DaysInMonth(), "day of %s", text)
+				_ = d.DayInYear()
+				_ = d.WeekDay()
+				_, _ = d.Season()
+				_ = d.Format(calendar.FullFormat)
+				var buf bytes.Buffer
+				d.TextCalendarMonth(&buf)
+			}, "%s", text)
+			// The boundary years round-trip through their own text, including the previous-era magnitude 2147483648
+			// that only fits an int32 once its sign is restored.
+			got, err := cal.ParseDate(text)
+			c.NoError(err, "%s", text)
+			c.True(got.Equal(d), "%s parsed back as %s", text, got.Format(calendar.ShortFormat))
+		}
+	}
+	greg := calendar.Gregorian()
+	c.Equal("1/1/2147483648 BC", greg.MustNewDate(1, 1, math.MinInt32).String())
+	_, err := greg.ParseDate("1/1/2147483648")
+	c.HasError(err)
+	_, err = greg.ParseDate("1/1/2147483649 BC")
+	c.HasError(err)
+	_, err = greg.ParseDate("1/1/-2147483649")
+	c.HasError(err)
+	// The full year at each end renders.
+	var buf bytes.Buffer
+	c.NoError(greg.Text(math.MaxInt32, &buf))
+	c.True(strings.HasPrefix(buf.String(), "Year 2147483647\n"))
+	buf.Reset()
+	c.NoError(greg.Text(math.MinInt32, &buf))
+	c.True(strings.HasPrefix(buf.String(), "Year 2147483648 BC\n"))
+}
+
+// TestFormatPassesThroughNonDirectives verifies that a % which does not introduce a directive is emitted as written,
+// along with the character after it, and that a trailing % is not lost. The directive switch once had no default case,
+// so "50% off" rendered as "50off" and "100%" as "100".
+func TestFormatPassesThroughNonDirectives(t *testing.T) {
+	c := check.New(t)
+	d := calendar.Gregorian().MustNewDate(9, 22, 2017)
+	c.Equal("50% off", d.Format("50% off"))
+	c.Equal("100%", d.Format("100%"))
+	c.Equal("%Q", d.Format("%Q"))
+	c.Equal("%", d.Format("%"))
+	c.Equal("%é", d.Format("%é")) // a multi-byte character after the % survives intact
+	c.Equal("%x9", d.Format("%x%N"))
+	c.Equal("9/22/2017%", d.Format("%N/%D/%Y%"))
+	c.Equal("%%", d.Format("%%%")) // an escaped % followed by a trailing one
+	var buf strings.Builder
+	d.WriteFormat(&buf, "%Y%")
+	c.Equal("2017%", buf.String())
+}
+
+// TestDateEqual pins Date.Equal, which exists because == cannot compare a zero Date{} with the same day obtained from
+// Default(): the former carries no calendar reference and the latter does, though both resolve to the default calendar.
+func TestDateEqual(t *testing.T) {
+	c := check.New(t)
+	greg := calendar.Gregorian()
+	d := greg.MustNewDate(9, 22, 2017)
+	same := d
+	c.True(d.Equal(same))
+	c.True(d.Equal(greg.NewDateByDays(d.Days())))
+	c.False(d.Equal(d.Add(1)))
+	c.False(d.Add(1).Equal(d))
+	// The same day count on a different calendar is a different date.
+	c.False(d.Equal(calendar.PathfinderAbsalomReckoning().NewDateByDays(d.Days())))
+
+	zero := calendar.Date{}
+	fromDefault := calendar.Default().NewDateByDays(0)
+	c.Equal(zero.String(), fromDefault.String())
+	c.True(zero != fromDefault, "== distinguishes the two, which is the trap Equal exists for")
+	c.True(zero.Equal(fromDefault))
+	c.True(fromDefault.Equal(zero))
+	c.True(zero.Equal(calendar.Date{}))
+	c.True(zero.Equal(zero.Add(0)))
+	c.False(zero.Equal(zero.Add(1)))
+	c.False(zero.Equal(fromDefault.Add(-1)))
 }

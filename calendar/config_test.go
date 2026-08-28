@@ -10,7 +10,9 @@
 package calendar_test
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
 	"math"
 	"strings"
 	"testing"
@@ -79,28 +81,82 @@ func TestConfigBoundsTotalDaysPerYear(t *testing.T) {
 	c.HasError(err)
 	c.True(cal == nil)
 
-	// The total is capped at math.MaxInt32. A single month exactly at the cap is accepted and MinDaysPerYear reports
-	// it faithfully. Year math.MaxInt32 on such a calendar lies beyond DaysLimit, so NewDate rejects it rather than
-	// returning a saturated date, while a date at the limit itself stays finite and resolves rather than wrapping to a
-	// negative day count or panicking in resolve().
-	atCap := base(calendar.Month{Name: "A", Days: math.MaxInt32})
+	// The longest year is capped at 2^30 days. A single month exactly at the cap is accepted and MinDaysPerYear reports
+	// it faithfully, and even year math.MaxInt32 on such a calendar is representable: its last day stays finite and
+	// resolves rather than wrapping to a negative day count or panicking in resolve().
+	atCap := base(calendar.Month{Name: "A", Days: 1 << 30})
 	c.NoError(atCap.Valid())
 	cal, err = calendar.New(atCap)
 	c.NoError(err)
-	c.Equal(math.MaxInt32, cal.MinDaysPerYear())
-	_, err = cal.NewDate(1, 1, math.MaxInt32)
-	c.HasError(err)
-	d := cal.NewDateByDays(calendar.DaysLimit)
+	c.Equal(1<<30, cal.MinDaysPerYear())
+	d, err := cal.NewDate(1, 1<<30, math.MaxInt32)
+	c.NoError(err)
 	c.True(d.Days() > 0, "extreme date must not wrap to a negative day count")
 	c.Equal(1, d.Month())
+	c.Equal(math.MaxInt32, d.Year())
+	c.Equal(d, cal.NewDateByDays(math.MaxInt64))
 
 	// One day past the cap (spread across two months) is rejected, proving the bound is inclusive and not off by one.
-	overByOne := base(calendar.Month{Name: "A", Days: math.MaxInt32}, calendar.Month{Name: "B", Days: 1})
+	overByOne := base(calendar.Month{Name: "A", Days: 1 << 30}, calendar.Month{Name: "B", Days: 1})
 	c.HasError(overByOne.Valid())
+
+	// A leap rule adds a day to the longest year, so a leap calendar must leave room for it under the cap.
+	leapAtCap := base(calendar.Month{Name: "A", Days: 1 << 30})
+	leapAtCap.LeapYear = &calendar.LeapYear{Month: 1, Every: 2}
+	c.HasError(leapAtCap.Valid())
+	leapUnderCap := base(calendar.Month{Name: "A", Days: 1<<30 - 1})
+	leapUnderCap.LeapYear = &calendar.LeapYear{Month: 1, Every: 2}
+	c.NoError(leapUnderCap.Valid())
+	cal, err = calendar.New(leapUnderCap)
+	c.NoError(err)
+	c.Equal(1<<30-1, cal.Days(1))
+	c.Equal(1<<30, cal.Days(2))
 
 	// A month total well within the cap remains valid regardless of how many months contribute to it.
 	ok := base(calendar.Month{Name: "A", Days: 30}, calendar.Month{Name: "B", Days: 31}, calendar.Month{Name: "C", Days: 30})
 	c.NoError(ok.Valid())
+}
+
+// TestConfigBoundsListLengths pins the caps on the number of week days, months and seasons: each list is accepted at
+// its cap and rejected one past it, independently of the others, and a calendar at every cap at once is fully usable.
+func TestConfigBoundsListLengths(t *testing.T) {
+	c := check.New(t)
+	names := func(prefix string, n int) []string {
+		out := make([]string, n)
+		for i := range out {
+			out[i] = fmt.Sprintf("%s%d", prefix, i+1)
+		}
+		return out
+	}
+	build := func(weekDays, months, seasons int) *calendar.Config {
+		cfg := &calendar.Config{WeekDays: names("W", weekDays)}
+		for _, name := range names("M", months) {
+			cfg.Months = append(cfg.Months, calendar.Month{Name: name, Days: 1})
+		}
+		for _, name := range names("S", seasons) {
+			cfg.Seasons = append(cfg.Seasons, calendar.Season{Name: name, StartMonth: 1, StartDay: 1, EndMonth: 1, EndDay: 1})
+		}
+		return cfg
+	}
+	c.NoError(build(99, 99, 99).Valid())
+	c.HasError(build(100, 1, 0).Valid())
+	c.HasError(build(1, 100, 0).Valid())
+	c.HasError(build(1, 1, 100).Valid())
+
+	cal, err := calendar.New(build(99, 99, 99))
+	c.NoError(err)
+	d := cal.MustNewDate(99, 1, 1)
+	c.Equal(99, d.Month())
+	c.Equal("M99", d.MonthName())
+	c.Equal("99/1", d.Format("%n/%d")) // the %n padding never needs more than two digits
+	c.Equal(98, d.WeekDay())
+	c.Equal("W99", d.WeekDayName())
+	s, ok := cal.MustNewDate(1, 1, 1).Season()
+	c.True(ok)
+	c.Equal("S1", s.Name)
+	var buf bytes.Buffer
+	c.NoError(cal.Text(1, &buf))
+	c.True(strings.Contains(buf.String(), "99: M99"), "%s", buf.String())
 }
 
 func TestConfigOmitsEmptySeasons(t *testing.T) {
