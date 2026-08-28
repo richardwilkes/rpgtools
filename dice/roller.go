@@ -29,9 +29,15 @@ func NewRoller(cfg *Config) (*Roller, error) {
 
 // Config returns a clone of this Roller's Config.
 func (r *Roller) Config() *Config {
-	return r.config().Clone()
+	if r != nil && r.cfg != nil {
+		return r.cfg.Clone()
+	}
+	return DefaultConfig() // Already a clone
 }
 
+// config returns the Config to use for a single operation. For a zero-value or nil Roller this is a fresh copy of the
+// default Config, taken under the global lock, so each exported method fetches it exactly once and passes it down: the
+// whole operation then sees one consistent Config (even if SetDefaultConfig runs concurrently) and pays for one copy.
 func (r *Roller) config() *Config {
 	if r != nil && r.cfg != nil {
 		return r.cfg
@@ -41,13 +47,14 @@ func (r *Roller) config() *Config {
 
 // Format a Dice for display.
 func (r *Roller) Format(dice Dice) string {
-	return r.prepare(dice).format(r.config().GURPSFormat)
+	cfg := r.config()
+	return cfg.prepare(dice).format(cfg.GURPSFormat)
 }
 
 // Parse a dice string in the form 3d6+1x2 and turns it into a Dice.
 func (r *Roller) Parse(spec string) Dice {
 	cfg := r.config()
-	return r.Normalize(parseDice(spec, cfg.MaxCount, cfg.MaxSides, cfg.MaxModifier, cfg.MaxMultiplier))
+	return cfg.normalize(parseDice(spec, cfg.MaxCount, cfg.MaxSides, cfg.MaxModifier, cfg.MaxMultiplier))
 }
 
 func nextChar(in string, inPos int) (ch byte, outPos int) {
@@ -80,11 +87,11 @@ func extractValue(in string, inPos, maxValue int) (value, outPos int) {
 
 // Roll the dice.
 func (r *Roller) Roll(dice Dice) int {
-	dice = r.prepare(dice)
+	cfg := r.config()
+	dice = cfg.prepare(dice)
 	result := dice.Modifier
 	switch {
 	case dice.Sides > 1:
-		cfg := r.config()
 		for range dice.Count {
 			result += 1 + cfg.Randomizer.Intn(dice.Sides)
 		}
@@ -96,40 +103,51 @@ func (r *Roller) Roll(dice Dice) int {
 
 // Normalize the provided Dice, ensuring all values are within permitted ranges, and return the modified copy.
 func (r *Roller) Normalize(dice Dice) Dice {
-	cfg := r.config()
-	dice.Count = min(max(dice.Count, 0), cfg.MaxCount)
-	dice.Sides = min(max(dice.Sides, 0), cfg.MaxSides)
-	dice.Modifier = min(max(dice.Modifier, -cfg.MaxModifier), cfg.MaxModifier)
-	dice.Multiplier = min(max(dice.Multiplier, 1), cfg.MaxMultiplier)
-	return dice.normalize()
+	return r.config().normalize(dice)
 }
 
 // ApplyExtraDiceFromModifiers returns the Dice as if the ExtraDiceFromModifiers configuration option had been applied
 // to its components. No more dice are added than the configured MaxCount allows: once the count would reach MaxCount,
 // any modifier that would have converted into further dice is left in the modifier instead.
 func (r *Roller) ApplyExtraDiceFromModifiers(dice Dice) Dice {
-	dice = r.Normalize(dice)
+	return r.config().applyExtraDiceFromModifiers(dice)
+}
+
+// normalize clamps each field of the Dice into the range this Config permits.
+func (c *Config) normalize(dice Dice) Dice {
+	dice.Count = min(max(dice.Count, 0), c.MaxCount)
+	dice.Sides = min(max(dice.Sides, 0), c.MaxSides)
+	dice.Modifier = min(max(dice.Modifier, -c.MaxModifier), c.MaxModifier)
+	dice.Multiplier = min(max(dice.Multiplier, 1), c.MaxMultiplier)
+	return dice.normalize()
+}
+
+// applyExtraDiceFromModifiers implements Roller.ApplyExtraDiceFromModifiers for this Config.
+func (c *Config) applyExtraDiceFromModifiers(dice Dice) Dice {
+	dice = c.normalize(dice)
 	var adjustment int
-	adjustment, dice.Modifier = computeExtraDice(dice.Sides, dice.Modifier, r.config().MaxCount-dice.Count)
+	adjustment, dice.Modifier = computeExtraDice(dice.Sides, dice.Modifier, c.MaxCount-dice.Count)
 	dice.Count += adjustment
 	return dice
 }
 
-func (r *Roller) prepare(dice Dice) Dice {
-	if r.config().ExtraDiceFromModifiers {
-		return r.ApplyExtraDiceFromModifiers(dice)
+// prepare normalizes the Dice and, if this Config asks for it, converts its modifier into extra dice.
+func (c *Config) prepare(dice Dice) Dice {
+	if c.ExtraDiceFromModifiers {
+		return c.applyExtraDiceFromModifiers(dice)
 	}
-	return r.Normalize(dice)
+	return c.normalize(dice)
 }
 
 // IsEquivalent returns true if the two Dice are equivalent.
 func (r *Roller) IsEquivalent(d1, d2 Dice) bool {
-	return r.Normalize(d1) == r.Normalize(d2)
+	cfg := r.config()
+	return cfg.normalize(d1) == cfg.normalize(d2)
 }
 
 // Minimum returns the minimum result.
 func (r *Roller) Minimum(dice Dice) int {
-	dice = r.prepare(dice)
+	dice = r.config().prepare(dice)
 	result := dice.Modifier
 	if dice.Sides > 0 {
 		result += dice.Count
@@ -139,7 +157,7 @@ func (r *Roller) Minimum(dice Dice) int {
 
 // Average returns the average result.
 func (r *Roller) Average(dice Dice) int {
-	dice = r.prepare(dice)
+	dice = r.config().prepare(dice)
 	result := dice.Modifier
 	if dice.Count > 0 && dice.Sides > 0 {
 		result += dice.Count * (dice.Sides + 1) / 2
@@ -149,7 +167,7 @@ func (r *Roller) Average(dice Dice) int {
 
 // Maximum returns the maximum result.
 func (r *Roller) Maximum(dice Dice) int {
-	dice = r.prepare(dice)
+	dice = r.config().prepare(dice)
 	result := dice.Modifier
 	result += dice.Count * dice.Sides
 	return result * dice.Multiplier
@@ -157,7 +175,7 @@ func (r *Roller) Maximum(dice Dice) int {
 
 // PoolProbability return the probability that at least one die will be equal to or greater than the target value.
 func (r *Roller) PoolProbability(dice Dice, target int) float64 {
-	dice = r.Normalize(dice)
+	dice = r.config().normalize(dice)
 	if dice.Count < 1 || dice.Sides < 1 || dice.Sides < target {
 		return 0
 	}

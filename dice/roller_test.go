@@ -507,6 +507,41 @@ func TestParseClampsBareNumberSumToMaxModifier(t *testing.T) {
 	c.Equal(0, r.Parse("50+3").Count)
 }
 
+// TestZeroRollerFetchesDefaultConfigOnce pins that a zero-value or nil Roller takes exactly one copy of the default
+// Config per exported method call. Each call is measured against the same call on a configured Roller, which never
+// copies its Config, and must cost exactly one allocation more: the copy DefaultConfig returns. Previously Roll fetched
+// the default three times (prepare, Normalize and the roll loop), tripling the cost and letting a concurrent
+// SetDefaultConfig be observed part-way through a single call.
+func TestZeroRollerFetchesDefaultConfigOnce(t *testing.T) {
+	c := check.New(t)
+	configured := newRoller(c, nil, false, false)
+	var zero dice.Roller
+	var nilRoller *dice.Roller
+	d := dice.Dice{Count: 3, Sides: 6, Modifier: 2, Multiplier: 1}
+	for _, one := range []struct {
+		call func(r *dice.Roller)
+		name string
+	}{
+		{func(r *dice.Roller) { r.Roll(d) }, "Roll"},
+		{func(r *dice.Roller) { r.Format(d) }, "Format"},
+		{func(r *dice.Roller) { r.Parse("3d6+2") }, "Parse"},
+		{func(r *dice.Roller) { r.Normalize(d) }, "Normalize"},
+		{func(r *dice.Roller) { r.ApplyExtraDiceFromModifiers(d) }, "ApplyExtraDiceFromModifiers"},
+		{func(r *dice.Roller) { r.IsEquivalent(d, d) }, "IsEquivalent"},
+		{func(r *dice.Roller) { r.Minimum(d) }, "Minimum"},
+		{func(r *dice.Roller) { r.Average(d) }, "Average"},
+		{func(r *dice.Roller) { r.Maximum(d) }, "Maximum"},
+		{func(r *dice.Roller) { r.PoolProbability(d, 4) }, "PoolProbability"},
+	} {
+		want := testing.AllocsPerRun(100, func() { one.call(configured) }) + 1
+		c.Equal(want, testing.AllocsPerRun(100, func() { one.call(&zero) }), one.name)
+		c.Equal(want, testing.AllocsPerRun(100, func() { one.call(nilRoller) }), one.name+" on a nil Roller")
+	}
+	// Config returns the copy DefaultConfig made rather than cloning it a second time.
+	c.Equal(1.0, testing.AllocsPerRun(100, func() { zero.Config() }))
+	c.Equal(1.0, testing.AllocsPerRun(100, func() { nilRoller.Config() }))
+}
+
 func TestDiceHash(t *testing.T) {
 	c := check.New(t)
 	digest := func(d *dice.Dice) []byte {
