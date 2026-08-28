@@ -23,6 +23,38 @@ func TestConfig(t *testing.T) {
 	c.NoError(opts.Valid())
 }
 
+func TestSetDefaultConfig(t *testing.T) {
+	c := check.New(t)
+	original := dice.DefaultConfig()
+	defer func() { c.NoError(dice.SetDefaultConfig(original)) }()
+
+	// An invalid Config is rejected with an error and the default is left untouched, rather than being silently
+	// discarded.
+	cfg := dice.DefaultConfig()
+	cfg.MaxCount = -5
+	c.HasError(dice.SetDefaultConfig(cfg))
+	c.Equal(original.MaxCount, dice.DefaultConfig().MaxCount)
+
+	// A nil Config is likewise an error, not a panic or a silent no-op.
+	c.HasError(dice.SetDefaultConfig(nil))
+	c.Equal(original.MaxCount, dice.DefaultConfig().MaxCount)
+
+	// A valid Config is installed and observed both by DefaultConfig and by a Roller that has no Config of its own.
+	cfg = dice.DefaultConfig()
+	cfg.MaxCount = 42
+	cfg.GURPSFormat = !original.GURPSFormat
+	c.NoError(dice.SetDefaultConfig(cfg))
+	got := dice.DefaultConfig()
+	c.Equal(42, got.MaxCount)
+	c.Equal(cfg.GURPSFormat, got.GURPSFormat)
+	var r dice.Roller
+	c.Equal(42, r.Parse("100d6").Count)
+
+	// The default holds a copy: mutating the Config that was passed in afterward must not leak into the default.
+	cfg.MaxCount = 7
+	c.Equal(42, dice.DefaultConfig().MaxCount)
+}
+
 func TestConfigValidatesMaxModifier(t *testing.T) {
 	c := check.New(t)
 

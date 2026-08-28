@@ -52,7 +52,10 @@ type Config struct {
 	// suppressed if it is a '1' and the sides value is always shown.
 	GURPSFormat bool
 	// ExtraDiceFromModifiers determines if modifiers greater than or equal to the average result of the base die should
-	// be converted to extra dice for the purposes of display. For example, 1d6+8 will display as 3d6+1.
+	// be converted to extra dice. This is not merely cosmetic: the conversion is applied by Roll, Minimum, Average and
+	// Maximum as well as Format, so it changes the distribution of rolled results. For example, with it set, 1d6+8 is
+	// treated as 3d6+1, so it displays as such, Minimum returns 4 rather than 9, Maximum returns 19 rather than 14, and
+	// Roll produces a value in [4,19] rather than [9,14].
 	ExtraDiceFromModifiers bool
 }
 
@@ -63,13 +66,17 @@ func DefaultConfig() *Config {
 	return defaultConfig.Clone()
 }
 
-// SetDefaultConfig sets the default Config to use when one isn't explicitly set on a Roller. A copy will be made.
-func SetDefaultConfig(opts *Config) {
-	if opts.Valid() == nil {
-		defaultConfigLock.Lock()
-		defaultConfig = opts.Clone()
-		defaultConfigLock.Unlock()
+// SetDefaultConfig sets the default Config to use when one isn't explicitly set on a Roller. A copy will be made. If
+// the Config is nil or otherwise not valid (see Valid), an error describing the problem is returned and the default is
+// left unchanged.
+func SetDefaultConfig(cfg *Config) error {
+	if err := cfg.Valid(); err != nil {
+		return err
 	}
+	defaultConfigLock.Lock()
+	defaultConfig = cfg.Clone()
+	defaultConfigLock.Unlock()
+	return nil
 }
 
 // Clone this configuration. Currently, this is a simple copy, but provided so that if the options become more complex

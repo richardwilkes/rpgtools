@@ -279,6 +279,34 @@ func (topFaceRandomizer) Intn(n int) int {
 	return n - 1
 }
 
+// TestExtraDiceFromModifiersChangesResults pins down that ExtraDiceFromModifiers is not a display-only option: with it
+// set, Roll, Minimum, Average and Maximum all operate on the converted dice, so the range of results shifts.
+func TestExtraDiceFromModifiersChangesResults(t *testing.T) {
+	c := check.New(t)
+	plain := newRoller(c, topFaceRandomizer{}, false, false)
+	extra := newRoller(c, topFaceRandomizer{}, false, true)
+	d := plain.Parse("1d6+8")
+
+	c.Equal("d6+8", plain.Format(d))
+	c.Equal(9, plain.Minimum(d))
+	c.Equal(11, plain.Average(d))
+	c.Equal(14, plain.Maximum(d))
+	c.Equal(14, plain.Roll(d))
+
+	c.Equal("3d6+1", extra.Format(d))
+	c.Equal(4, extra.Minimum(d))
+	c.Equal(11, extra.Average(d))
+	c.Equal(19, extra.Maximum(d))
+	c.Equal(19, extra.Roll(d))
+
+	// With a real randomizer, the roll ranges over the converted dice's [4,19] rather than [9,14].
+	extra = newRoller(c, nil, false, true)
+	for range 100 {
+		got := extra.Roll(d)
+		c.True(got >= 4 && got <= 19, "roll %d outside [4,19]", got)
+	}
+}
+
 func TestRollTerminatesOnHugeCount(t *testing.T) {
 	c := check.New(t)
 	r := newRoller(c, nil, false, false)
