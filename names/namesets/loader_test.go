@@ -10,6 +10,8 @@
 package namesets
 
 import (
+	"bufio"
+	"errors"
 	"math"
 	"strings"
 	"testing"
@@ -114,6 +116,17 @@ func TestLoadFromReaderDropsTrailingComma(t *testing.T) {
 	c.Equal(1, m["Carol"])
 	c.Equal(1, m["Smith, Jr."])
 	c.Equal(3, len(m))
+}
+
+func TestLoadFromReaderLongLineStopsScan(t *testing.T) {
+	c := check.New(t)
+	// Lines are read with bufio.Scanner's default 64KB buffer. A longer line is neither split nor truncated: the scan
+	// stops at it, the names collected before it are returned, and a non-nil error reports the overflow. Everything
+	// after the long line is therefore never seen, so Bob is dropped along with the oversized entry.
+	m, err := LoadFromReader(strings.NewReader("Alice,5\n" + strings.Repeat("x", 70000) + ",3\nBob,7\n"))
+	c.HasError(err)
+	c.True(errors.Is(err, bufio.ErrTooLong), "expected bufio.ErrTooLong, got: %v", err)
+	c.Equal(map[string]int{"Alice": 5}, m)
 }
 
 func TestLoadFromReaderLargeCountSaturates(t *testing.T) {

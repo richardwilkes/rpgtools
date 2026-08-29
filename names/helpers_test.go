@@ -10,6 +10,7 @@
 package names
 
 import (
+	"fmt"
 	"math"
 	"math/rand/v2"
 	"testing"
@@ -49,6 +50,13 @@ func (s *seededRand) Intn(n int) int {
 	return s.r.IntN(n)
 }
 
+// blankWeighted and blankUnweighted contain only names that trim to nothing, so a namer built from either has no usable
+// data. Shared by the empty-data tests of every namer.
+var (
+	blankWeighted   = map[string]int{"": 5, "   ": 2}
+	blankUnweighted = []string{"", "   "}
+)
+
 func TestApplyCase(t *testing.T) {
 	c := check.New(t)
 	c.Equal("hELLo", applyCase("hELLo", false, false)) // unchanged
@@ -70,13 +78,62 @@ func (r *recordingNamer) GenerateNameWithRandomizer(rnd xrand.Randomizer) string
 	return "recorded"
 }
 
-func TestGenerateNameSuppliesFreshRandomizer(t *testing.T) {
+func TestGenerateNameSuppliesDefaultRandomizer(t *testing.T) {
 	c := check.New(t)
 	// generateName is the single place every Namer.GenerateName routes through; it must delegate to
-	// GenerateNameWithRandomizer with a real (non-nil) randomizer and return that method's result.
+	// GenerateNameWithRandomizer with the shared default randomizer (xrand.New returns a stateless singleton, so every
+	// call is handed the same instance) and return that method's result.
 	r := &recordingNamer{}
 	c.Equal("recorded", r.GenerateName())
 	c.True(r.got != nil, "generateName must pass a non-nil randomizer")
+	c.True(r.got == xrand.New(), "generateName must pass the shared default randomizer")
+}
+
+func TestDefaultRandomizerWeightsUniformly(t *testing.T) {
+	c := check.New(t)
+	// Weighted selection is only as fair as the default randomizer's Intn. The toolbox xrand implementation before
+	// v2.17.0 drew the smallest byte width that could hold n and reduced it with v % n, so with 200 equally weighted
+	// names (a one-byte draw: 256 = 200 + 56) the first 56 names in table order were each picked twice as often as the
+	// rest, landing 43.75% of draws in that block instead of 28%. Rejection sampling fixed that upstream; this pins the
+	// dependency so a regression (or a downgrade) shows up here as a visibly skewed block share.
+	const total, block, draws = 200, 56, 200_000
+	list := make([]string, total)
+	for i := range list {
+		list[i] = fmt.Sprintf("n%03d", i)
+	}
+	n := NewSimpleUnweightedNamer(list, false, false)
+	// The table is sorted, so n000..n055 occupy the first 'block' slots and every name below n056 is one of them.
+	boundary := fmt.Sprintf("n%03d", block)
+	inBlock := 0
+	for range draws {
+		if n.GenerateName() < boundary {
+			inBlock++
+		}
+	}
+	share := float64(inBlock) / draws
+	// The fair share is 0.28 with a standard deviation of about 0.001 over this many draws, so a threshold of 0.35 sits
+	// some 70 standard deviations from a fair generator and 80 from the biased one: it cannot flake in either direction.
+	c.True(share < 0.35, "first %d of %d names received %.4f of draws; expected about 0.28", block, total, share)
+}
+
+func TestZeroValueNamersGenerateEmpty(t *testing.T) {
+	c := check.New(t)
+	// A namer that was never built by a constructor has no data to draw from. Every implementation must treat that as
+	// "nothing to generate" and return "" rather than panic, so the zero value of each is usable just as a zero
+	// dice.Roller is. The Markov namers embed their core by value for exactly this reason: a nil embedded pointer would
+	// panic on the first field access.
+	var (
+		simple   SimpleNamer
+		compound CompoundNamer
+		letter   MarkovLetterNamer
+		run      MarkovRunNamer
+	)
+	for i, namer := range []Namer{&simple, &compound, &letter, &run} {
+		c.NotPanics(func() {
+			c.Equal("", namer.GenerateName(), "namer index %d", i)
+			c.Equal("", namer.GenerateNameWithRandomizer(constRand(0)), "namer index %d", i)
+		}, "namer index %d", i)
+	}
 }
 
 func TestGenerateNameAcrossNamers(t *testing.T) {

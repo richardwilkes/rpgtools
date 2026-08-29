@@ -43,7 +43,9 @@ type markovStepper[S cmp.Ordered] interface {
 
 // markov is the shared core of the Markov-chain namers. S is the unit a name is generated from one step at a time: a
 // rune for MarkovLetterNamer or a vowel/consonant run for MarkovRunNamer. Everything that differs between the two
-// namers lives in the markovStepper; the training and generation logic here is identical for both.
+// namers lives in the markovStepper; the training and generation logic here is identical for both. The namers embed it
+// by value so that their zero values are usable: a zero markov has no stepper and no training data, and generating from
+// it yields "" rather than a nil pointer dereference, matching the zero SimpleNamer and CompoundNamer.
 type markov[S cmp.Ordered] struct {
 	stepper      markovStepper[S]
 	mapping      map[string][]weightedStep[S]
@@ -54,8 +56,8 @@ type markov[S cmp.Ordered] struct {
 	firstToUpper bool
 }
 
-func newMarkov[S cmp.Ordered](stepper markovStepper[S], data iter.Seq2[string, int], lowered, firstToUpper bool) *markov[S] {
-	n := &markov[S]{
+func newMarkov[S cmp.Ordered](stepper markovStepper[S], data iter.Seq2[string, int], lowered, firstToUpper bool) markov[S] {
+	n := markov[S]{
 		stepper:      stepper,
 		final:        make(map[S]struct{}),
 		lowered:      lowered,
@@ -104,6 +106,11 @@ func (n *markov[S]) GenerateName() string {
 
 // GenerateNameWithRandomizer generates a new random name using the specified randomizer.
 func (n *markov[S]) GenerateNameWithRandomizer(rnd xrand.Randomizer) string {
+	// A zero-value namer (one not built by a constructor) has no stepper and no training data, so there is nothing to
+	// generate. Return "" as SimpleNamer and CompoundNamer do rather than dereferencing the nil stepper.
+	if n.stepper == nil {
+		return ""
+	}
 	var buffer strings.Builder
 	maximum := selectMax(n.lengths, rnd)
 	// Past 'maximum' the loop keeps going only to end on a natural (final) step. Training data whose transition graph

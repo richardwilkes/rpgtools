@@ -27,6 +27,14 @@ func TestCompoundSkipsNilNamers(t *testing.T) {
 	c := check.New(t)
 	a := fixedNamer("A")
 	b := fixedNamer("B")
+	// Typed nil pointers stored in a Namer interface are not == nil, so a plain interface comparison lets them through
+	// and they panic on first use. Every pointer-receiver namer in the package is represented.
+	var (
+		nilSimple   *SimpleNamer
+		nilLetter   *MarkovLetterNamer
+		nilRun      *MarkovRunNamer
+		nilCompound *CompoundNamer
+	)
 
 	// A nil namer anywhere in the list must be dropped rather than dereferenced at generation time, and it must
 	// not leave a spurious separator behind.
@@ -34,11 +42,16 @@ func TestCompoundSkipsNilNamers(t *testing.T) {
 		expected string
 		namers   []Namer
 	}{
-		{"A-B", []Namer{a, nil, b}}, // 0 - nil in the middle
-		{"A-B", []Namer{nil, a, b}}, // 1 - nil at the start
-		{"A-B", []Namer{a, b, nil}}, // 2 - nil at the end
-		{"A", []Namer{nil, a, nil}}, // 3 - only one survivor
-		{"", []Namer{nil, nil}},     // 4 - nothing survives
+		{"A-B", []Namer{a, nil, b}},         // 0 - nil in the middle
+		{"A-B", []Namer{nil, a, b}},         // 1 - nil at the start
+		{"A-B", []Namer{a, b, nil}},         // 2 - nil at the end
+		{"A", []Namer{nil, a, nil}},         // 3 - only one survivor
+		{"", []Namer{nil, nil}},             // 4 - nothing survives
+		{"A-B", []Namer{a, nilSimple, b}},   // 5 - typed nil *SimpleNamer in the middle
+		{"A-B", []Namer{nilLetter, a, b}},   // 6 - typed nil *MarkovLetterNamer at the start
+		{"A-B", []Namer{a, b, nilRun}},      // 7 - typed nil *MarkovRunNamer at the end
+		{"A", []Namer{nilCompound, a, nil}}, // 8 - typed nil *CompoundNamer alongside an untyped nil
+		{"", []Namer{nilSimple, nilRun}},    // 9 - only typed nils
 	} {
 		var result string
 		c.NotPanics(func() {

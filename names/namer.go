@@ -45,8 +45,12 @@ type Namer interface {
 	GenerateNameWithRandomizer(rnd xrand.Randomizer) string
 }
 
-// generateName produces a name from n using a fresh default randomizer. Every Namer implementation's GenerateName
-// delegates here so the choice of default randomizer (xrand.New) lives in one place instead of being repeated in each.
+// generateName produces a name from n using the shared default randomizer: xrand.New returns a stateless singleton
+// backed by crypto/rand that is safe for concurrent use, so nothing is allocated per call. Every Namer implementation's
+// GenerateName delegates here so the choice of default randomizer lives in one place instead of being repeated in each.
+// The weighting this package applies is only as uniform as that randomizer's Intn, which needs toolbox v2.17.0 or
+// later: earlier versions reduced a byte-width draw with v % n, which visibly skewed selection whenever a cumulative
+// total sat just above a byte boundary.
 func generateName(n Namer) string {
 	return n.GenerateNameWithRandomizer(xrand.New())
 }

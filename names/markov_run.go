@@ -25,7 +25,7 @@ var (
 
 // MarkovRunNamer provides a name generator that creates a name based on markov chains of runs of vowels or consonants.
 type MarkovRunNamer struct {
-	*markov[string]
+	markov[string]
 }
 
 // runStepper generates one vowel/consonant run at a time, keyed on the previous run.

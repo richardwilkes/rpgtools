@@ -20,8 +20,6 @@ func TestMarkovEmptyData(t *testing.T) {
 	c := check.New(t)
 	// Training data that is empty or contains only blank entries leaves the namer
 	// with nothing to generate. This must yield an empty name rather than panic.
-	blankWeighted := map[string]int{"": 5, "   ": 2}
-	blankUnweighted := []string{"", "   "}
 	c.Equal("", NewMarkovLetterNamer(2, blankWeighted, false, false).GenerateName())
 	c.Equal("", NewMarkovLetterNamer(2, map[string]int{}, false, false).GenerateName())
 	c.Equal("", NewMarkovLetterUnweightedNamer(2, blankUnweighted, false, false).GenerateName())
@@ -40,6 +38,37 @@ func TestMarkovLetterWeightedSelection(t *testing.T) {
 		counts[n.GenerateName()]++
 	}
 	c.Equal(2, len(counts), "expected both letters to be produced, got: %v", counts)
+}
+
+func TestMarkovLetterDepthClampsToOne(t *testing.T) {
+	c := check.New(t)
+	// A depth below 1 would leave the sliding window empty and growing rather than sliding, so the constructors clamp
+	// it to 1. Namers built with a zero or negative depth must therefore be indistinguishable from one built with depth
+	// 1: same stepper, same transition table (including the initial key), and the same names from the same seed.
+	weighted := map[string]int{"quill": 1, "raven": 2, "sable": 3}
+	unweighted := []string{"quill", "raven", "sable"}
+	const seed, samples = 7, 30
+	generate := func(n *MarkovLetterNamer) []string {
+		rnd := newSeededRand(seed)
+		out := make([]string, samples)
+		for i := range out {
+			out[i] = n.GenerateNameWithRandomizer(rnd)
+		}
+		return out
+	}
+	wantWeighted := NewMarkovLetterNamer(1, weighted, false, false)
+	wantUnweighted := NewMarkovLetterUnweightedNamer(1, unweighted, false, false)
+	for _, depth := range []int{0, -3} {
+		got := NewMarkovLetterNamer(depth, weighted, false, false)
+		c.Equal(letterStepper{depth: 1}, got.stepper, "weighted depth %d", depth)
+		c.Equal(wantWeighted.mapping, got.mapping, "weighted depth %d", depth)
+		c.Equal(generate(wantWeighted), generate(got), "weighted depth %d", depth)
+
+		got = NewMarkovLetterUnweightedNamer(depth, unweighted, false, false)
+		c.Equal(letterStepper{depth: 1}, got.stepper, "unweighted depth %d", depth)
+		c.Equal(wantUnweighted.mapping, got.mapping, "unweighted depth %d", depth)
+		c.Equal(generate(wantUnweighted), generate(got), "unweighted depth %d", depth)
+	}
 }
 
 func TestMarkovRunLengthWeighting(t *testing.T) {
@@ -124,7 +153,7 @@ func TestMarkovGenerationHasHardCap(t *testing.T) {
 	// set. The generation loop only stops on a dead-end key, an empty token, or a final token past 'maximum', so
 	// without a hard cap it would spin forever. The cap bounds the result at twice the longest training length
 	// (2*4 = 8 here).
-	letter := &MarkovLetterNamer{&markov[rune]{
+	letter := &MarkovLetterNamer{markov[rune]{
 		stepper: letterStepper{depth: 1},
 		mapping: map[string][]weightedStep[rune]{
 			"\x00": {{step: 'a', last: 1}},
@@ -137,7 +166,7 @@ func TestMarkovGenerationHasHardCap(t *testing.T) {
 	}}
 	c.Equal(8, utf8.RuneCountInString(letter.GenerateName()), "letter namer must stop at the hard cap")
 
-	run := &MarkovRunNamer{&markov[string]{
+	run := &MarkovRunNamer{markov[string]{
 		stepper: runStepper{},
 		mapping: map[string][]weightedStep[string]{
 			"":  {{step: "a", last: 1}},

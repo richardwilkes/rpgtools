@@ -1,8 +1,8 @@
 module github.com/richardwilkes/rpgtools
 
-go 1.26.0
+go 1.27.0
 
 require (
-	github.com/richardwilkes/toolbox/v2 v2.14.0
+	github.com/richardwilkes/toolbox/v2 v2.17.0
 	gopkg.in/yaml.v3 v3.0.1
 )

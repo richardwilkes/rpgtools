@@ -34,6 +34,23 @@ func TestSimple(t *testing.T) {
 	c.True(exists, "expecting to find 'bB' in: %v", counts)
 }
 
+func TestSimpleEmptyData(t *testing.T) {
+	c := check.New(t)
+	// Data that is empty or contains only blank names (which the constructor trims away) leaves the namer with nothing
+	// to choose from. This must yield an empty name rather than panic, mirroring TestMarkovEmptyData.
+	for i, n := range []*SimpleNamer{
+		NewSimpleNamer(map[string]int{}, false, false),
+		NewSimpleNamer(blankWeighted, false, false),
+		NewSimpleUnweightedNamer(blankUnweighted, false, false),
+		NewSimpleNamer(blankWeighted, true, true), // the case transforms must cope with an empty result too
+	} {
+		c.NotPanics(func() {
+			c.Equal("", n.GenerateName(), "namer index %d", i)
+			c.Equal("", n.GenerateNameWithRandomizer(constRand(0)), "namer index %d", i)
+		}, "namer index %d", i)
+	}
+}
+
 func TestSimpleBuildsCumulativeWeightedSteps(t *testing.T) {
 	c := check.New(t)
 	// SimpleNamer stores its weighted names in the same weightedStep[string] the Markov namers use, rather than a
