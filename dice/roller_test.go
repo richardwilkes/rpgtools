@@ -390,6 +390,26 @@ func TestPoolProbability(t *testing.T) {
 	}
 }
 
+func TestPoolProbabilityHonorsExtraDiceFromModifiers(t *testing.T) {
+	c := check.New(t)
+	plain := newRoller(c, nil, false, false)
+	extra := newRoller(c, nil, false, true)
+	d := plain.Parse("1d6+8")
+	c.Equal(dice.Dice{Count: 1, Sides: 6, Modifier: 8, Multiplier: 1}, d)
+
+	// Regression: PoolProbability normalized the dice while every other method prepared them, so with
+	// ExtraDiceFromModifiers set it still answered for the single die of 1d6+8 (1/6) even though Roll, Format and the
+	// rest treat that as 3d6+1. It must see the same three-die pool they do: 1-(5/6)^3 = 91/216.
+	c.Equal("3d6+1", extra.Format(d))
+	c.Equal(4, extra.Minimum(d))
+	got := extra.PoolProbability(d, 6)
+	c.True(math.Abs(got-91.0/216.0) < 1e-12, "3d6+1 pool >=6 probability = %v, want ~%v", got, 91.0/216.0)
+
+	// The conversion still applies only when the flag is set.
+	got = plain.PoolProbability(d, 6)
+	c.True(math.Abs(got-1.0/6.0) < 1e-12, "1d6+8 pool >=6 probability = %v, want ~%v", got, 1.0/6.0)
+}
+
 func TestExtractValueOverflow(t *testing.T) {
 	c := check.New(t)
 	r := newRoller(c, nil, false, false)
@@ -741,24 +761,71 @@ func TestExtractFirstPosition(t *testing.T) {
 	}
 }
 
-// TestExtractedSpanIsCanonical pins the reconciliation guarantee between ExtractDicePosition and New: the span the
-// extractor returns is already exactly what New parses it back into, with no trailing operator or interior space that
-// New would silently drop. Before this was reconciled, e.g. "3d6+ 2" yielded the span "3d6+ 2" while New("3d6+ 2")
-// parsed only "3d6".
+// TestExtractedSpanIsCanonical pins the reconciliation guarantee between ExtractDicePosition and Parse: Parse consumes
+// the span the extractor returns in full, so there is no trailing operator or interior space that Parse would silently
+// drop, and the span means exactly what Parse makes of it. Before this was reconciled, e.g. "3d6+ 2" yielded the span
+// "3d6+ 2" while Parse("3d6+ 2") parsed only "3d6". For most spans this also makes the span its own canonical spelling,
+// so Format(Parse(span)) == span. The guarantee is not that the span is canonical, though: a span may be shorthand
+// ("3d" is Parse's 3d6) or bare arithmetic ("5+3" is the modifier 8), and those rows list the canonical form
+// explicitly. What must hold for them is that the tail Parse might have dropped ("d", "+3") is in fact consumed.
 func TestExtractedSpanIsCanonical(t *testing.T) {
 	c := check.New(t)
 	r := newRoller(c, nil, false, false)
-	for _, text := range []string{
-		"3d6+ 2", "d6- 5", "5 ", "roll 5 ", "13 ", "5 5", "d6+", "3d6x", "2d6+2x", "d6+x", "roll 3d6 for me", "d6x2",
-		"5", "roll 5", "d6", "2d6+2",
-		// A sign directly before a multiplier is dangling; the span must still be exactly what New parses it back into.
-		"d6+x2", "d6-x2", "3d6+x5", "5+x2", "d6+X2",
+	for _, one := range []struct {
+		text      string
+		canonical string // Format(Parse(span)); empty means the span is its own canonical form
+	}{
+		{"3d6+ 2", ""},
+		{"d6- 5", ""},
+		{"5 ", ""},
+		{"roll 5 ", ""},
+		{"13 ", ""},
+		{"5 5", ""},
+		{"d6+", ""},
+		{"3d6x", ""},
+		{"2d6+2x", ""},
+		{"d6+x", ""},
+		{"roll 3d6 for me", ""},
+		{"d6x2", ""},
+		{"5", ""},
+		{"roll 5", ""},
+		{"d6", ""},
+		{"2d6+2", ""},
+		// A sign directly before a multiplier is dangling; the span must still be exactly what Parse consumes.
+		{"d6+x2", ""},
+		{"d6-x2", ""},
+		{"3d6+x5", ""},
+		{"5+x2", ""},
+		{"d6+X2", ""},
 		// A sign with nothing before it, or a bare number joined by a sign to a dice spec, is left out of the span.
-		"Deal +2d6 fire damage", "+3d6", " -4d6-", "12+3d6", "5+3d6", "12+3d6+2x3", "+d6", "dd6",
+		{"Deal +2d6 fire damage", ""},
+		{"+3d6", ""},
+		{" -4d6-", ""},
+		{"12+3d6", ""},
+		{"5+3d6", ""},
+		{"12+3d6+2x3", ""},
+		{"+d6", ""},
+		{"dd6", ""},
+		// Shorthand: a trailing 'd' means d6 (TestExtractFirstPosition case 33 keeps it in the span), so the span is
+		// consumed in full but is not the canonical spelling.
+		{"3d", "3d6"},
+		{"roll 3d", "3d6"},
+		// Bare arithmetic: a bare number joined by a sign to another is a modifier-only spec that Parse sums, so the
+		// span is consumed in full but formats as the sum.
+		{"5+3", "8"},
+		{"roll 5+3 things", "8"},
+		{"10-4", "6"},
 	} {
-		start, end := dice.ExtractDicePosition(text)
-		c.True(start >= 0 && start < end, text)
-		span := text[start:end]
-		c.Equal(span, r.Format(r.Parse(span)), text)
+		start, end := dice.ExtractDicePosition(one.text)
+		c.True(start >= 0 && start < end, one.text)
+		span := one.text[start:end]
+		parsed := r.Parse(span)
+		if one.canonical == "" {
+			c.Equal(span, r.Format(parsed), one.text)
+			continue
+		}
+		c.Equal(one.canonical, r.Format(parsed), one.text)
+		// The non-canonical tail was consumed rather than dropped: parsing without it gives different dice.
+		c.NotEqual(parsed, r.Parse(span[:len(span)-1]), one.text)
 	}
 }

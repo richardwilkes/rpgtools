@@ -140,8 +140,11 @@ func (dice *Dice) Hash(h hash.Hash) {
 }
 
 // ExtractDicePosition returns the start (inclusive) and end (exclusive) index of a Dice specification within the text.
-// If none can be found, -1, -1 will be returned. The span never contains an internal space and always begins with a
-// digit or a die marker, so parsing text[start:end] yields exactly the specification the span represents.
+// If none can be found, -1, -1 will be returned. The span never contains an internal space, always begins with a digit
+// or a die marker, and never ends with a dangling operator, so Roller.Parse consumes text[start:end] in full and yields
+// exactly the specification the span represents. The span is not necessarily the canonical spelling of that
+// specification, though: it may use shorthand ("3d" for 3d6) or be bare arithmetic ("5+3", which is the modifier 8), so
+// formatting the parsed result may not reproduce the span.
 func ExtractDicePosition(text string) (start, end int) {
 	start = -1
 	state := 0

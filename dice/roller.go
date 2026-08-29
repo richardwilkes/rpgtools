@@ -173,9 +173,11 @@ func (r *Roller) Maximum(dice Dice) int {
 	return result * dice.Multiplier
 }
 
-// PoolProbability return the probability that at least one die will be equal to or greater than the target value.
+// PoolProbability return the probability that at least one die will be equal to or greater than the target value. The
+// Dice are prepared the same way Roll prepares them, so with ExtraDiceFromModifiers set the probability is for the pool
+// that would actually be rolled (1d6+8 is a pool of three dice, not one).
 func (r *Roller) PoolProbability(dice Dice, target int) float64 {
-	dice = r.config().normalize(dice)
+	dice = r.config().prepare(dice)
 	if dice.Count < 1 || dice.Sides < 1 || dice.Sides < target {
 		return 0
 	}

@@ -52,10 +52,11 @@ type Config struct {
 	// suppressed if it is a '1' and the sides value is always shown.
 	GURPSFormat bool
 	// ExtraDiceFromModifiers determines if modifiers greater than or equal to the average result of the base die should
-	// be converted to extra dice. This is not merely cosmetic: the conversion is applied by Roll, Minimum, Average and
-	// Maximum as well as Format, so it changes the distribution of rolled results. For example, with it set, 1d6+8 is
-	// treated as 3d6+1, so it displays as such, Minimum returns 4 rather than 9, Maximum returns 19 rather than 14, and
-	// Roll produces a value in [4,19] rather than [9,14].
+	// be converted to extra dice. This is not merely cosmetic: the conversion is applied by Roll, Minimum, Average,
+	// Maximum and PoolProbability as well as Format, so it changes the distribution of rolled results. For example,
+	// with it set, 1d6+8 is treated as 3d6+1, so it displays as such, Minimum returns 4 rather than 9, Maximum returns
+	// 19 rather than 14, Roll produces a value in [4,19] rather than [9,14], and PoolProbability sees a pool of three
+	// dice rather than one.
 	ExtraDiceFromModifiers bool
 }
 
