@@ -91,10 +91,7 @@ func pickWeighted[T any](entries []T, rnd xrand.Randomizer, cumulativeOf func(T)
 	if total < 1 {
 		return zero, false
 	}
-	// The cumulative total is an int64 so summing the weights cannot overflow; Randomizer.Intn works in int, but the
-	// total never exceeds the entry count times the maxWeight ceiling, which stays within int on the 64-bit platforms
-	// this package targets.
-	v := 1 + int64(rnd.Intn(int(total)))
+	v := 1 + randomBelow(rnd, total)
 	// The cumulative weights are non-decreasing, so the entry to pick is the first one whose running total reaches v.
 	// Binary search for it rather than scanning every entry: a SimpleNamer or transition key built from many entries
 	// would otherwise pay an O(n) walk on every draw, the same linear-scan trap Date.Year once had.
@@ -104,6 +101,37 @@ func pickWeighted[T any](entries []T, rnd xrand.Randomizer, cumulativeOf func(T)
 		return entries[i], true
 	}
 	return zero, false
+}
+
+// randomBelow returns a uniformly distributed value in [0, n) for a positive n. The cumulative totals are int64 so that
+// summing many weights cannot overflow, but Randomizer.Intn works in the platform int: on a 64-bit platform every total
+// fits and a single draw suffices, while on a 32-bit platform a total past math.MaxInt (two saturated weights are
+// enough) would be truncated by a plain int conversion. Intn(-2) then returns 0 and every draw would silently select
+// the first entry, so such totals are drawn in two parts instead.
+func randomBelow(rnd xrand.Randomizer, n int64) int64 {
+	return randomBelowWithLimit(rnd, n, math.MaxInt)
+}
+
+// randomBelowWithLimit is randomBelow with the largest argument Intn accepts made explicit, so the two-part path can be
+// exercised on any platform. When n exceeds limit the draw is composed as hi*limit+lo, with hi drawn from
+// [0, ceil(n/limit)) and lo from [0, limit); every value below n corresponds to exactly one (hi, lo) pair, so rejecting
+// the values at or above n keeps the result uniform. The rejection loop is bounded so that a degenerate Randomizer
+// (one that keeps returning the same out-of-range pair) cannot hang it; after the last attempt the value is folded into
+// range, which is biased but finite.
+func randomBelowWithLimit(rnd xrand.Randomizer, n, limit int64) int64 {
+	if n <= limit {
+		return int64(rnd.Intn(int(n)))
+	}
+	buckets := (n + limit - 1) / limit
+	const maxAttempts = 64
+	var v int64
+	for range maxAttempts {
+		v = int64(rnd.Intn(int(buckets)))*limit + int64(rnd.Intn(int(limit)))
+		if v < n {
+			return v
+		}
+	}
+	return v % n
 }
 
 // cumulativePairs converts a transition table of per-item counts into one of per-item cumulative weights suitable for

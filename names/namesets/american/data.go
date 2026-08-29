@@ -26,7 +26,8 @@ var female string
 
 // The embedded corpora are large, so each is parsed at most once and the parsed map is cached. Callers receive a fresh
 // clone of that map so they retain the prior contract of owning a map they may freely mutate without affecting other
-// callers or the cache.
+// callers or the cache. That clone is not free: it copies tens of thousands of entries on every call (several
+// megabytes and a fraction of a millisecond), which each accessor's doc warns about.
 var (
 	femaleOnce = sync.OnceValue(func() map[string]int {
 		return namesets.MustLoadFromReader(strings.NewReader(female))
@@ -39,7 +40,8 @@ var (
 	})
 )
 
-// Female returns a map of American female first names to frequency of occurrence.
+// Female returns a map of American female first names to frequency of occurrence. Each call clones the cached corpus
+// (tens of thousands of entries), so call it once and reuse the result rather than calling it inside a loop.
 func Female() map[string]int {
 	return maps.Clone(femaleOnce())
 }
@@ -47,7 +49,8 @@ func Female() map[string]int {
 //go:embed male.txt
 var male string
 
-// Male returns a map of American male first names to frequency of occurrence.
+// Male returns a map of American male first names to frequency of occurrence. Each call clones the cached corpus (tens
+// of thousands of entries), so call it once and reuse the result rather than calling it inside a loop.
 func Male() map[string]int {
 	return maps.Clone(maleOnce())
 }
@@ -55,7 +58,8 @@ func Male() map[string]int {
 //go:embed last.txt
 var last string
 
-// Last returns a map of American last names to frequency of occurrence.
+// Last returns a map of American last names to frequency of occurrence. Each call clones the cached corpus (over a
+// hundred thousand entries), so call it once and reuse the result rather than calling it inside a loop.
 func Last() map[string]int {
 	return maps.Clone(lastOnce())
 }

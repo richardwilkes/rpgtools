@@ -13,6 +13,7 @@ import (
 	"iter"
 	"maps"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/richardwilkes/toolbox/v2/xunicode"
@@ -51,40 +52,47 @@ func (runStepper) write(b *strings.Builder, step string) {
 	b.WriteString(step)
 }
 
-// decompose splits s into a sequence of maximal runs, each consisting entirely of vowels or entirely of consonants.
+// runClass is the kind of rune a run is made of. Marks (combining accents) take the class of the rune they follow, so a
+// decomposed "e\u0301" stays in one run just as the precomposed "é" does.
+type runClass uint8
+
+const (
+	runClassNone runClass = iota
+	runClassVowel
+	runClassConsonant
+	runClassOther
+)
+
+// classify reports which run class ch belongs to. prev is the class of the preceding rune, which a mark inherits.
+func classify(ch rune, prev runClass) runClass {
+	switch {
+	case xunicode.IsVowely(ch):
+		return runClassVowel
+	case unicode.IsLetter(ch):
+		return runClassConsonant
+	case unicode.IsMark(ch) && prev != runClassNone:
+		return prev
+	default:
+		return runClassOther
+	}
+}
+
+// decompose splits s into a sequence of maximal runs, each consisting entirely of vowels, entirely of consonants, or
+// entirely of non-letters. Keeping non-letters (spaces, apostrophes, hyphens, digits) in runs of their own means a
+// name's punctuation never merges into a consonant cluster: "O'Brien" yields ["O", "'", "Br", "ie", "n"] rather than
+// ["O", "'Br", "ie", "n"].
 func decompose(s string) []string {
 	var runs []string
 	var buffer strings.Builder
-	state := -1
+	prev := runClassNone
 	for _, ch := range s {
-		isVowel := xunicode.IsVowely(ch)
-		switch state {
-		case 0:
-			if isVowel {
-				runs = append(runs, buffer.String())
-				buffer.Reset()
-				buffer.WriteRune(ch)
-				state = 1
-			} else {
-				buffer.WriteRune(ch)
-			}
-		case 1:
-			if isVowel {
-				buffer.WriteRune(ch)
-			} else {
-				runs = append(runs, buffer.String())
-				buffer.Reset()
-				buffer.WriteRune(ch)
-				state = 0
-			}
-		default:
-			if isVowel {
-				state = 1
-			} else {
-				state = 0
-			}
-			buffer.WriteRune(ch)
+		class := classify(ch, prev)
+		if class != prev && buffer.Len() != 0 {
+			runs = append(runs, buffer.String())
+			buffer.Reset()
 		}
+		buffer.WriteRune(ch)
+		prev = class
 	}
 	if buffer.Len() != 0 {
 		runs = append(runs, buffer.String())
@@ -100,9 +108,10 @@ func NewMarkovRunNamer(data map[string]int, lowered, firstToUpper bool) *MarkovR
 	return newMarkovRunNamer(maps.All(data), lowered, firstToUpper)
 }
 
-// NewMarkovRunUnweightedNamer creates a new MarkovRunNamer. The data should be a set of names to train the model with.
-// If 'lowered' is true, then the result will be forced to lowercase. If 'firstToUpper' is true, then the result will
-// have its first letter capitalized.
+// NewMarkovRunUnweightedNamer creates a new MarkovRunNamer. The data should be a list of names to train the model with;
+// each occurrence counts once, so a name that appears more than once is weighted accordingly rather than collapsed to a
+// single entry. If 'lowered' is true, then the result will be forced to lowercase. If 'firstToUpper' is true, then the
+// result will have its first letter capitalized.
 func NewMarkovRunUnweightedNamer(data []string, lowered, firstToUpper bool) *MarkovRunNamer {
 	return newMarkovRunNamer(unweighted(data), lowered, firstToUpper)
 }

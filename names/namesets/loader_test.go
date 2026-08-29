@@ -67,6 +67,27 @@ func TestLoadFromReaderSuppressesNonPositiveCounts(t *testing.T) {
 	c.Equal(2, len(m)) // only Keep and Survivor remain
 }
 
+func TestLoadFromReaderZeroCountAccumulates(t *testing.T) {
+	c := check.New(t)
+	// Counts accumulate across lines and only the accumulated total is compared against 1, so an explicit 0 adds
+	// nothing: it cannot cancel an earlier positive count, and a later positive count revives a name that a 0 line
+	// alone would have suppressed. Only a negative count can offset earlier lines.
+	m, err := LoadFromReader(strings.NewReader(strings.Join([]string{
+		"Bob, 5",
+		"Bob, 0", // adds nothing, so Bob stays at 5
+		"Carol, 0",
+		"Carol, 3", // Carol is 0 + 3
+		"Dave, 5",
+		"Dave, -5", // a negative count does offset the earlier line
+	}, "\n")))
+	c.NoError(err)
+	c.Equal(5, m["Bob"])
+	c.Equal(3, m["Carol"])
+	_, ok := m["Dave"]
+	c.False(ok, "a negative count must offset an earlier positive one")
+	c.Equal(2, len(m))
+}
+
 func TestLoadFromReaderNameWithComma(t *testing.T) {
 	c := check.New(t)
 	// Only the final comma separates the name from the count, so a name that itself contains commas is kept intact

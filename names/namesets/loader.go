@@ -33,8 +33,10 @@ func MustLoadFromReader(r io.Reader) map[string]int {
 // contains a name optionally followed by a comma and a count. A count is recognized only when the text after the final
 // comma parses as an integer; a dangling trailing comma (with nothing after it) is dropped, and any other comma is part
 // of the name, so a name that itself contains a comma, such as "Smith, Jr.", is kept intact rather than truncated. When
-// no count is given a value of 1 is assumed. An explicit count of less than 1 removes the name from the returned set
-// (matching the namer constructors), so a data author can suppress a name by giving it a count of 0.
+// no count is given a value of 1 is assumed. Counts for a name that appears on more than one line accumulate, and a
+// name whose accumulated total is less than 1 is removed from the returned set (matching the namer constructors). A
+// data author can therefore suppress a name that appears only once by giving it a count of 0, or offset earlier lines
+// with a negative count; a count of 0 on its own adds nothing, so "Bob,5" followed by "Bob,0" leaves Bob at 5.
 //
 // Lines are read with the default bufio.Scanner buffer, so a single line longer than roughly 64KB is not split or
 // truncated: the scan stops at that line and a non-nil error is returned along with the names accumulated so far. A

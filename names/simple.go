@@ -34,9 +34,10 @@ func NewSimpleNamer(data map[string]int, lowered, firstToUpper bool) *SimpleName
 	return newSimpleNamer(maps.All(data), lowered, firstToUpper)
 }
 
-// NewSimpleUnweightedNamer creates a new SimpleNamer. The data should be a set of names to choose from. If 'lowered' is
-// true, then the result will be forced to lowercase. If 'firstToUpper' is true, then the result will have its first
-// letter capitalized.
+// NewSimpleUnweightedNamer creates a new SimpleNamer. The data should be a list of names to choose from; each
+// occurrence counts once, so a name that appears more than once is weighted accordingly rather than collapsed to a
+// single entry. If 'lowered' is true, then the result will be forced to lowercase. If 'firstToUpper' is true, then the
+// result will have its first letter capitalized.
 func NewSimpleUnweightedNamer(data []string, lowered, firstToUpper bool) *SimpleNamer {
 	return newSimpleNamer(unweighted(data), lowered, firstToUpper)
 }

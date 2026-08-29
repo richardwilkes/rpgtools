@@ -116,6 +116,42 @@ func TestDefaultRandomizerWeightsUniformly(t *testing.T) {
 	c.True(share < 0.35, "first %d of %d names received %.4f of draws; expected about 0.28", block, total, share)
 }
 
+func TestRandomBelowWithLimit(t *testing.T) {
+	c := check.New(t)
+	// A total that fits the Intn limit is a single draw.
+	c.Equal(int64(3), randomBelowWithLimit(constRand(3), 7, 10))
+	c.Equal(int64(0), randomBelowWithLimit(constRand(0), 10, 10))
+
+	// Past the limit the draw is composed as hi*limit+lo: with limit 10 and n 25 there are 3 hi buckets, so a
+	// randomizer fixed at 2 yields 2*10+2 = 22. One fixed at 9 is clamped to bucket 2 for hi and yields 29, which is out
+	// of range on every attempt; the bounded rejection loop must then fold it into range rather than spin forever.
+	c.Equal(int64(22), randomBelowWithLimit(constRand(2), 25, 10))
+	c.Equal(int64(29%25), randomBelowWithLimit(constRand(9), 25, 10))
+
+	// Every value below n must be reachable and roughly equally likely: over 25,000 draws each of the 25 values is
+	// expected 1,000 times with a standard deviation of about 31, so bounds of 800 and 1,200 sit over six deviations out.
+	const n, draws = 25, 25_000
+	counts := make([]int, n)
+	rnd := newSeededRand(5)
+	for range draws {
+		v := randomBelowWithLimit(rnd, n, 10)
+		c.True(v >= 0 && v < n, "draw %d is out of range", v)
+		counts[v]++
+	}
+	for v, count := range counts {
+		c.True(count > 800 && count < 1200, "value %d drawn %d times, expected about 1000", v, count)
+	}
+}
+
+func TestRandomBelowMatchesSingleDraw(t *testing.T) {
+	c := check.New(t)
+	// On this platform every cumulative total the namers can produce fits a single Intn draw, so randomBelow must hand
+	// the total straight to Intn and return its result unchanged.
+	for _, v := range []int{0, 1, 41} {
+		c.Equal(int64(v), randomBelow(constRand(v), 42))
+	}
+}
+
 func TestZeroValueNamersGenerateEmpty(t *testing.T) {
 	c := check.New(t)
 	// A namer that was never built by a constructor has no data to draw from. Every implementation must treat that as
