@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/richardwilkes/toolbox/v2/errs"
 )
@@ -39,10 +40,19 @@ const (
 	maxSeasons  = 99
 )
 
+// maxNamesLength bounds the total number of characters across every name a Config carries: its week days, months,
+// seasons and both eras. Its purpose is to keep the ParseDate patterns, which embed every month name (twice, with its
+// abbreviation) and both era names as literals, well inside the size a regular expression may have. regexp refuses an
+// expression past roughly 2^24 characters; quoting a name for literal use at most doubles it, and the rest of a pattern
+// is a few dozen characters, so the patterns built for a Config at this cap are more than a hundred times smaller than
+// that limit. Week day and season names never reach a pattern, but they are counted too so the rule is one budget for
+// the Config as a whole rather than a distinction a data author would have to learn.
+const maxNamesLength = 1 << 16
+
 var (
 	absalom   = newPathfinderCalendar("AR")
 	imperial  = newPathfinderCalendar("IC")
-	gregorian = mustNewCalendar(&Config{
+	gregorian = newCalendar(&Config{
 		DayZeroWeekDay: 1,
 		WeekDays:       []string{"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"},
 		Months: []Month{
@@ -110,7 +120,8 @@ type LeapYear struct {
 // Config holds the configuration data for a Calendar. Seasons may be empty. A season whose start falls after its end is
 // permitted: it is interpreted as wrapping the year boundary (see Date.Season). Seasons are likewise permitted to
 // overlap one another or to leave gaps in the year; neither is treated as an error. A Config may hold at most 99 week
-// days, 99 months and 99 seasons.
+// days, 99 months and 99 seasons, and its names -- the week days, months, seasons and both eras together -- may total
+// at most 65,536 characters.
 type Config struct {
 	LeapYear       *LeapYear `json:"leapyear,omitempty" yaml:",omitempty"`
 	Era            string    `json:"era,omitempty" yaml:",omitempty"`
@@ -250,6 +261,22 @@ func (c *Config) Valid() error {
 	if c.Era != c.PreviousEra && strings.EqualFold(c.Era, c.PreviousEra) {
 		return errs.New("era and previous era may not differ only in letter case")
 	}
+	// The names are budgeted as a whole (see maxNamesLength). Unlike the month days, a name's length is bounded by
+	// what fits in memory, and the number of names is capped above, so the sum cannot overflow.
+	length := utf8.RuneCountInString(c.Era) + utf8.RuneCountInString(c.PreviousEra)
+	for _, weekDay := range c.WeekDays {
+		length += utf8.RuneCountInString(weekDay)
+	}
+	for i := range c.Months {
+		length += utf8.RuneCountInString(c.Months[i].Name)
+	}
+	for i := range c.Seasons {
+		length += utf8.RuneCountInString(c.Seasons[i].Name)
+	}
+	if length > maxNamesLength {
+		return errs.Newf("the names of the week days, months, seasons and eras may not total more than %d characters",
+			maxNamesLength)
+	}
 	return nil
 }
 
@@ -288,7 +315,7 @@ func PathfinderImperialCalendar() *Calendar {
 // era name (the same name serves as both the current and previous era). Each call returns an independent Calendar built
 // from fresh component slices.
 func newPathfinderCalendar(era string) *Calendar {
-	return mustNewCalendar(&Config{
+	return newCalendar(&Config{
 		WeekDays: []string{
 			"Moonday",
 			"Toilday",

@@ -11,12 +11,10 @@
 package calendar
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"math"
 	"regexp"
-	"regexp/syntax"
 	"slices"
 	"strconv"
 	"strings"
@@ -55,26 +53,20 @@ type Calendar struct {
 	lastDay        int64          // Days of the latest Date the calendar can represent; see Date.Add
 }
 
-// New creates a new Calendar from the given Config. An error is returned if the Config is not Valid, or if its month
-// and era names are so long that the ParseDate patterns built from them exceed the size a regular expression may have.
+// New creates a new Calendar from the given Config. An error is returned if the Config is not Valid.
 func New(cfg *Config) (*Calendar, error) {
 	if err := cfg.Valid(); err != nil {
 		return nil, err
 	}
-	return newCalendar(cfg.Clone())
+	return newCalendar(cfg.Clone()), nil
 }
 
 // newCalendar wraps an already-validated (or built-in) Config, precomputing minDaysPerYear so Year and the date
 // accessors that lean on it do not re-sum every month on each call, the span of days a Date on the calendar may occupy,
 // and the ParseDate patterns that depend on the Config's month and era names. The cfg is taken as-is and not cloned
-// again; callers pass a Config they own (New clones first, the built-ins pass a fresh literal). Valid does not bound
-// the length of a name, so building the patterns is the one step that can still fail for a Config it accepts.
-func newCalendar(cfg *Config) (*Calendar, error) {
-	numeric, named, err := cfg.dateRegexes()
-	if err != nil {
-		return nil, err
-	}
-	c := &Calendar{cfg: cfg, numericDate: numeric, namedDate: named}
+// again; callers pass a Config they own (New clones first, the built-ins pass a fresh literal).
+func newCalendar(cfg *Config) *Calendar {
+	c := &Calendar{cfg: cfg}
 	for i := range cfg.Months {
 		c.minDaysPerYear += cfg.Months[i].Days
 	}
@@ -82,16 +74,7 @@ func newCalendar(cfg *Config) (*Calendar, error) {
 	// target; maxDaysPerYear keeps that whole span within an int64 on every calendar.
 	c.firstDay = c.yearToDays(math.MinInt32)
 	c.lastDay = c.yearToDays(math.MaxInt32) + int64(c.Days(math.MaxInt32)) - 1
-	return c, nil
-}
-
-// mustNewCalendar builds one of the package's built-in calendars. Their Configs are literals known to be valid and
-// small, so a failure is a programming error rather than a condition to report.
-func mustNewCalendar(cfg *Config) *Calendar {
-	c, err := newCalendar(cfg)
-	if err != nil {
-		panic(err) // @allow
-	}
+	c.numericDate, c.namedDate = cfg.dateRegexes()
 	return c
 }
 
@@ -104,9 +87,11 @@ func mustNewCalendar(cfg *Config) *Calendar {
 // must be followed by the end of the text or a non-alphanumeric character so a label cannot match the start of a longer
 // word ("BC" inside "BCE"); when the Config names no era the group is present but can never match, so the parts a match
 // yields always have the same shape. Alternatives are ordered longest first so a name that is a prefix of another is
-// never preferred over the longer match. Compilation fails only when the names are so long that a pattern exceeds the
-// size a regular expression may have (see compileDatePattern).
-func (c *Config) dateRegexes() (numeric, named *regexp.Regexp, err error) {
+// never preferred over the longer match. Every name is quoted literally and the patterns have no nesting, so the only
+// way compilation could fail is by exceeding the size a regular expression may have, and maxNamesLength keeps the
+// patterns for any Config Valid accepts far inside that (the built-in Configs are smaller still), which is what lets
+// them be compiled with MustCompile.
+func (c *Config) dateRegexes() (numeric, named *regexp.Regexp) {
 	months := make([]string, 0, len(c.Months)*2)
 	for i := range c.Months {
 		months = append(months, c.Months[i].Name, xstrings.FirstN(c.Months[i].Name, abbreviatedNameLength))
@@ -115,30 +100,9 @@ func (c *Config) dateRegexes() (numeric, named *regexp.Regexp, err error) {
 	if eras := alternation(c.Era, c.PreviousEra); eras != "" {
 		era = "(?: *(" + eras + ")(?:$|[^\\pL\\pN]))?"
 	}
-	if numeric, err = compileDatePattern("(?i)([[:digit:]]+)/([[:digit:]]+)/(-?[[:digit:]]+)" + era); err != nil {
-		return nil, nil, err
-	}
-	if named, err = compileDatePattern("(?i)(" + alternation(months...) + ") *([[:digit:]]+), *(-?[[:digit:]]+)" +
-		era); err != nil {
-		return nil, nil, err
-	}
-	return numeric, named, nil
-}
-
-// compileDatePattern compiles one ParseDate pattern, returning an error rather than panicking when it cannot. Every
-// name in a pattern is quoted literally and the pattern has no nesting, so the only way compilation can fail is by
-// exceeding the size a regular expression may have, which Config.Valid does not guard against since it places no bound
-// on the length of a name. A syntax.Error embeds the entire expression in its text, and for this failure that is
-// exactly what is too large to be worth reporting, so only the reason is kept.
-func compileDatePattern(expr string) (*regexp.Regexp, error) {
-	re, err := regexp.Compile(expr)
-	if err == nil {
-		return re, nil
-	}
-	if syntaxErr, ok := errors.AsType[*syntax.Error](err); ok {
-		return nil, errs.Newf("month and era names are too long to build a date parser from: %s", syntaxErr.Code)
-	}
-	return nil, errs.NewWithCause("unable to build a date parser from the month and era names", err)
+	numeric = regexp.MustCompile("(?i)([[:digit:]]+)/([[:digit:]]+)/(-?[[:digit:]]+)" + era)
+	named = regexp.MustCompile("(?i)(" + alternation(months...) + ") *([[:digit:]]+), *(-?[[:digit:]]+)" + era)
+	return numeric, named
 }
 
 // alternation joins the distinct, non-empty names into a regular expression alternation of literal matches, longest

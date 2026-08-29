@@ -141,6 +141,9 @@ func TestConfigValidRejectsEachRule(t *testing.T) {
 			"eras differing only in case", func(cfg *calendar.Config) { cfg.Era, cfg.PreviousEra = "ad", "AD" },
 			"differ only in letter case",
 		},
+		{"names past their total length budget", func(cfg *calendar.Config) {
+			cfg.Months[0].Name = strings.Repeat("a", 65536)
+		}, "may not total more than"},
 	} {
 		cfg := calendar.Gregorian().Config()
 		tc.mutate(cfg)
@@ -191,6 +194,80 @@ func TestEraCaseIsSignificantToNeither(t *testing.T) {
 				c.True(want.Equal(got), "eras %q/%q: %q parsed back as %s", eras[0], eras[1], text, got)
 			}
 		}
+	}
+}
+
+// TestConfigBoundsNamesLength pins the budget on the total length of a Config's names, which exists to keep the
+// ParseDate patterns (built from the month and era names as literals) inside the size a regular expression may have.
+// A Config that spends the whole budget is accepted, builds, and parses its own text; one character more, wherever it
+// is spent, is rejected. New once reached regexp.MustCompile with an unbounded name and panicked with "expression too
+// large" -- reachable from any YAML- or JSON-loaded Config -- so the original 16 MB name must now be turned away by
+// Valid, quickly and without a panic.
+func TestConfigBoundsNamesLength(t *testing.T) {
+	c := check.New(t)
+	const maxNames = 65536 // the documented cap on the total length of a Config's names, in characters
+	const budgeted = "the names of the week days, months, seasons and eras may not total more than"
+	// The names below total exactly the cap: 4 + 3 + 2 + 1 characters spread over the other kinds so each is shown to
+	// count, a five-character second month, and the rest on the first month's name, which the patterns embed in full.
+	// The dates parsed lie in the short month: the patterns must work with the huge name among their alternatives,
+	// but matching text that is itself tens of thousands of identical characters is quadratic in Go's regexp engine,
+	// which is a property of the engine rather than of this budget.
+	build := func(weekDay, month, season, era, previousEra string) *calendar.Config {
+		return &calendar.Config{
+			WeekDays:    []string{weekDay},
+			Months:      []calendar.Month{{Name: month, Days: 30}, {Name: "Brief", Days: 30}},
+			Seasons:     []calendar.Season{{Name: season, StartMonth: 1, StartDay: 1, EndMonth: 1, EndDay: 30}},
+			Era:         era,
+			PreviousEra: previousEra,
+		}
+	}
+	month := strings.Repeat("m", maxNames-15)
+	cfg := build("wwww", month, "sss", "ee", "p")
+	c.NoError(cfg.Valid())
+	cal, err := calendar.New(cfg)
+	c.NoError(err)
+	want := cal.MustNewDate(2, 5, 100)
+	for _, layout := range []string{calendar.LongFormat, calendar.MediumFormat, "%M %D, %y", "%N/%D/%y"} {
+		text := want.Format(layout)
+		var got calendar.Date
+		got, err = cal.ParseDate(text)
+		c.NoError(err, "layout %q", layout)
+		c.True(want.Equal(got), "layout %q", layout)
+	}
+	got, err := cal.ParseDate("2/5/100 p")
+	c.NoError(err)
+	c.True(cal.MustNewDate(2, 5, -100).Equal(got))
+
+	// The budget is measured in characters, not bytes: the same count of two-byte characters is accepted.
+	cfg = build("wwww", strings.Repeat("\u00e9", maxNames-15), "sss", "ee", "p")
+	c.NoError(cfg.Valid())
+	_, err = calendar.New(cfg)
+	c.NoError(err)
+
+	// One character over, spent on any kind of name, is rejected.
+	for name, over := range map[string]*calendar.Config{
+		"week day":     build("wwwww", month, "sss", "ee", "p"),
+		"month":        build("wwww", month+"m", "sss", "ee", "p"),
+		"season":       build("wwww", month, "ssss", "ee", "p"),
+		"era":          build("wwww", month, "sss", "eee", "p"),
+		"previous era": build("wwww", month, "sss", "ee", "pp"),
+	} {
+		err = over.Valid()
+		c.HasError(err, name)
+		if err != nil {
+			c.Contains(err.Error(), budgeted, name)
+		}
+		_, err = calendar.New(over)
+		c.HasError(err, name)
+	}
+
+	// The original panic: a single name past what a regular expression can hold.
+	cfg = build("w", strings.Repeat("m", 1<<24+1), "s", "e", "p")
+	c.NotPanics(func() { cal, err = calendar.New(cfg) })
+	c.HasError(err)
+	c.True(cal == nil)
+	if err != nil {
+		c.Contains(err.Error(), budgeted)
 	}
 }
 
