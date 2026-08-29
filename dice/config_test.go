@@ -165,3 +165,121 @@ func TestConfigGuardsAverageIntermediateOverflow(t *testing.T) {
 	c.NoError(err)
 	c.Equal(math.MaxInt/2, r.Average(dice.Dice{Count: 2, Sides: math.MaxInt/2 - 1, Multiplier: 1}))
 }
+
+func TestConfigCloneNilReceiver(t *testing.T) {
+	c := check.New(t)
+	// Clone is nil-safe like its siblings Valid, Dice.Hash and Roller.Config, rather than panicking on a nil receiver.
+	var nilCfg *dice.Config
+	c.NotPanics(func() { nilCfg = nilCfg.Clone() })
+	c.True(nilCfg == nil)
+
+	// A real clone is an independent copy.
+	cfg := dice.DefaultConfig()
+	clone := cfg.Clone()
+	c.True(clone != cfg)
+	c.Equal(*cfg, *clone)
+	clone.MaxCount = cfg.MaxCount + 1
+	c.NotEqual(cfg.MaxCount, clone.MaxCount)
+}
+
+// nilRandomizer exists only so a typed nil pointer can be stored in a Config's Randomizer field.
+type nilRandomizer struct{}
+
+func (*nilRandomizer) Intn(_ int) int { return 0 }
+
+// TestConfigValidRejectsEachBound covers every individual check in Valid, including the overflow guards, each with a
+// sibling one step inside the bound to prove no guard is off by one.
+func TestConfigValidRejectsEachBound(t *testing.T) {
+	c := check.New(t)
+	var typedNil *nilRandomizer
+	for _, one := range []struct {
+		set   func(*dice.Config)
+		name  string
+		valid bool
+	}{
+		{func(o *dice.Config) { o.Randomizer = nil }, "nil Randomizer", false},
+		{func(o *dice.Config) { o.Randomizer = typedNil }, "typed-nil Randomizer", false},
+		{func(o *dice.Config) { o.MaxSides = 1 }, "MaxSides of 1", false},
+		{func(o *dice.Config) { o.MaxSides = 0 }, "MaxSides of 0", false},
+		{func(o *dice.Config) { o.MaxSides = 2 }, "MaxSides of 2", true},
+		{func(o *dice.Config) { o.MaxMultiplier = 0 }, "MaxMultiplier of 0", false},
+		{func(o *dice.Config) { o.MaxMultiplier = -1 }, "MaxMultiplier of -1", false},
+		{func(o *dice.Config) { o.MaxMultiplier = 1 }, "MaxMultiplier of 1", true},
+		// MaxCount*MaxSides itself overflows: 2*(MaxInt/2+1) is one past MaxInt.
+		{func(o *dice.Config) {
+			o.MaxCount = 2
+			o.MaxSides = math.MaxInt/2 + 1
+			o.MaxModifier = 0
+			o.MaxMultiplier = 1
+		}, "count*sides overflows", false},
+		// Adding MaxModifier to the product overflows by exactly one...
+		{func(o *dice.Config) {
+			o.MaxCount = 1
+			o.MaxSides = math.MaxInt / 2
+			o.MaxModifier = math.MaxInt - math.MaxInt/2 + 1
+			o.MaxMultiplier = 1
+		}, "product+modifier overflows", false},
+		// ...while one less lands exactly on MaxInt, which fits.
+		{func(o *dice.Config) {
+			o.MaxCount = 1
+			o.MaxSides = math.MaxInt / 2
+			o.MaxModifier = math.MaxInt - math.MaxInt/2
+			o.MaxMultiplier = 1
+		}, "product+modifier is exactly MaxInt", true},
+		// The final multiply overflows: 2*(MaxInt/2+1) is one past MaxInt...
+		{func(o *dice.Config) {
+			o.MaxCount = 1
+			o.MaxSides = 2
+			o.MaxModifier = 0
+			o.MaxMultiplier = math.MaxInt/2 + 1
+		}, "sum*multiplier overflows", false},
+		// ...while 2*(MaxInt/2) fits.
+		{func(o *dice.Config) {
+			o.MaxCount = 1
+			o.MaxSides = 2
+			o.MaxModifier = 0
+			o.MaxMultiplier = math.MaxInt / 2
+		}, "sum*multiplier fits", true},
+	} {
+		cfg := dice.DefaultConfig()
+		one.set(cfg)
+		err := cfg.Valid()
+		if one.valid {
+			c.NoError(err, one.name)
+		} else {
+			c.HasError(err, one.name)
+		}
+		r, err := dice.NewRoller(cfg)
+		c.Equal(one.valid, err == nil, one.name)
+		c.Equal(one.valid, r != nil, one.name)
+	}
+}
+
+// TestConfigValidIgnoresExtraDiceFlagForOverflow pins that the overflow check measures what ApplyExtraDiceFromModifiers
+// can actually produce. It never adds dice past MaxCount and only ever reduces the modifier, so setting
+// ExtraDiceFromModifiers cannot make a safe config unsafe. Previously the check measured the uncapped conversion, which
+// is never performed, and so rejected this config with the flag set while accepting it with the flag clear.
+func TestConfigValidIgnoresExtraDiceFlagForOverflow(t *testing.T) {
+	c := check.New(t)
+	cfg := dice.DefaultConfig()
+	cfg.MaxCount = 1
+	cfg.MaxSides = 6
+	cfg.MaxModifier = math.MaxInt - 10
+	cfg.MaxMultiplier = 1
+	cfg.ExtraDiceFromModifiers = false
+	c.NoError(cfg.Valid())
+	cfg.ExtraDiceFromModifiers = true
+	c.NoError(cfg.Valid())
+
+	// The most extreme dice the config permits are safe under every method: nothing converts (the count is already at
+	// MaxCount), so the arithmetic stays within the bounds Valid measured.
+	r, err := dice.NewRoller(cfg)
+	c.NoError(err)
+	d := dice.Dice{Count: 1, Sides: 6, Modifier: math.MaxInt - 10, Multiplier: 1}
+	c.Equal(d, r.ApplyExtraDiceFromModifiers(d))
+	c.Equal(math.MaxInt-9, r.Minimum(d))
+	c.Equal(math.MaxInt-7, r.Average(d))
+	c.Equal(math.MaxInt-4, r.Maximum(d))
+	got := r.Roll(d)
+	c.True(got >= math.MaxInt-9 && got <= math.MaxInt-4, "roll %d out of range", got)
+}

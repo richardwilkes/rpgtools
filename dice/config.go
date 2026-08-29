@@ -7,7 +7,6 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// Package dice simulates dice using standard roleplaying game notation.
 package dice
 
 import (
@@ -41,7 +40,12 @@ var (
 // Config holds various configuration options Dice.
 type Config struct {
 	// Randomizer is the source of randomness to use when rolling dice. When Clone() is called, it is copied by
-	// reference, so the same Randomizer is used in both the original and the clone.
+	// reference, so the same Randomizer is used in both the original and the clone, and DefaultConfig hands the same
+	// instance to every Roller that has no Config of its own. Nothing in this package synchronizes calls to it, so a
+	// Randomizer must be safe for concurrent use if the Roller holding it is shared between goroutines, and always if it
+	// is installed via SetDefaultConfig. The Randomizer returned by xrand.New is safe for concurrent use. A
+	// math/rand-backed Randomizer -- the natural way to get reproducible rolls -- is not, and so must be given only to a
+	// Roller that is confined to a single goroutine, never to the default Config.
 	Randomizer    xrand.Randomizer
 	MaxCount      int
 	MaxSides      int
@@ -69,7 +73,8 @@ func DefaultConfig() *Config {
 
 // SetDefaultConfig sets the default Config to use when one isn't explicitly set on a Roller. A copy will be made. If
 // the Config is nil or otherwise not valid (see Valid), an error describing the problem is returned and the default is
-// left unchanged.
+// left unchanged. Every zero-value Roller shares the installed Randomizer, so it must be safe for concurrent use (see
+// Config.Randomizer).
 func SetDefaultConfig(cfg *Config) error {
 	if err := cfg.Valid(); err != nil {
 		return err
@@ -81,8 +86,11 @@ func SetDefaultConfig(cfg *Config) error {
 }
 
 // Clone this configuration. Currently, this is a simple copy, but provided so that if the options become more complex
-// in the future, there is one canonical way to clone them.
+// in the future, there is one canonical way to clone them. A nil Config clones to nil.
 func (c *Config) Clone() *Config {
+	if c == nil {
+		return nil
+	}
 	other := *c
 	return &other
 }
@@ -129,47 +137,32 @@ func (c *Config) Valid() error {
 //
 //	value = (c.MaxCount*c.MaxSides + c.MaxModifier) * c.MaxMultiplier
 //
-// would overflow an int (while also accounting for the c.ExtraDiceFromModifiers flag). It assumes the ranges Valid()
-// enforces before calling it: every Max* field is <= maxFieldValue, c.MaxCount >= 1, c.MaxSides is >= 2, and
-// c.MaxMultiplier is >= 1, so c.MaxCount*c.MaxSides is non-negative and can only overflow past math.MaxInt, and the
-// sides+1 intermediates computeExtraDice and Average form cannot themselves wrap. Adding c.MaxModifier can only
-// overflow on the high side, since the product is non-negative and so the sum stays >= c.MaxModifier >= math.MinInt.
-// The resulting sum may be negative, so the final multiply by c.MaxMultiplier is checked against both math.MaxInt and
-// math.MinInt; because c.MaxMultiplier is >= 1, the bound on the wrong side of zero is never crossed. Each step is
-// checked in Go's evaluation order, so an intermediate result overflowing is caught even when the final value would
-// have been representable. Average forms a slightly larger intermediate than the equation above -- count*(sides+1)
-// rather than count*sides -- so that product+count step is bounded as well, keeping every Roller computation safe and
-// not just the one shown.
+// would overflow an int. It assumes the ranges Valid() enforces before calling it: every Max* field is <=
+// maxFieldValue, c.MaxCount >= 1, c.MaxSides >= 2, c.MaxModifier >= 0 and c.MaxMultiplier >= 1, so every term is
+// non-negative, each step can only overflow past math.MaxInt, and the sides+1 intermediates computeExtraDice and
+// Average form cannot themselves wrap. Each step is checked in Go's evaluation order, so an intermediate result
+// overflowing is caught even when the final value would have been representable. Average forms a slightly larger
+// intermediate than the equation above -- count*(sides+1) rather than count*sides -- so that product+count step is
+// bounded as well, keeping every Roller computation safe and not just the one shown.
+//
+// The ExtraDiceFromModifiers flag needs no separate treatment: applyExtraDiceFromModifiers never adds dice past
+// MaxCount and only ever reduces the modifier, so the dice it produces stay inside the bounds this equation measures.
+// Measuring the uncapped conversion instead would reject configs that are perfectly safe at runtime, such as a MaxCount
+// of 1 with a huge MaxModifier.
 func (c *Config) equationOverflows() bool {
-	var count, modifier int
-	if c.ExtraDiceFromModifiers {
-		// Measure the full, uncapped conversion here -- the worst case for overflow -- even though
-		// ApplyExtraDiceFromModifiers caps the dice it actually adds at MaxCount at runtime.
-		count, modifier = computeExtraDice(c.MaxSides, c.MaxModifier, math.MaxInt)
-		count += c.MaxCount
-		if count < 0 {
-			return true
-		}
-	} else {
-		count = c.MaxCount
-		modifier = c.MaxModifier
-	}
-	if mulOverflows(count, c.MaxSides) {
+	if mulOverflows(c.MaxCount, c.MaxSides) {
 		return true
 	}
-	product := count * c.MaxSides
+	product := c.MaxCount * c.MaxSides
 	// Average evaluates count*(sides+1) -- that is, product + count -- before halving, so the product must leave room
-	// to add count back without overflowing. count is >= 1 here (MaxCount is >= 1 and the ExtraDiceFromModifiers
-	// adjustment only adds to it). Valid() caps every Max* field at maxFieldValue before this runs, so the sides+1 that
-	// computeExtraDice forms above -- and count*(sides+1) here -- cannot themselves wrap.
-	if product > math.MaxInt-count {
+	// to add count back without overflowing.
+	if product > math.MaxInt-c.MaxCount {
 		return true
 	}
-	if modifier > 0 && product > math.MaxInt-modifier {
+	if product > math.MaxInt-c.MaxModifier {
 		return true
 	}
-	sum := product + modifier
-	return sum > math.MaxInt/c.MaxMultiplier || sum < math.MinInt/c.MaxMultiplier
+	return product+c.MaxModifier > math.MaxInt/c.MaxMultiplier
 }
 
 func mulOverflows(a, b int) bool {

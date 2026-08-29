@@ -7,7 +7,6 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// Package dice simulates dice using standard roleplaying game notation.
 package dice
 
 import (
@@ -51,10 +50,15 @@ func (r *Roller) Format(dice Dice) string {
 	return cfg.prepare(dice).format(cfg.GURPSFormat)
 }
 
-// Parse a dice string in the form 3d6+1x2 and turns it into a Dice.
+// Parse a dice string in the form 3d6+1x2 and turns it into a Dice, with each field clamped to the range this Roller's
+// Config permits. Parsing is lenient: surrounding whitespace is ignored, and the first character that cannot continue
+// the specification ends it, so any trailing text is ignored ("3d6 damage" is 3d6) and text with no notation at all is
+// the zero Dice. A bare number is a modifier ("5+3" is the modifier 8). A sign directly before a dice spec, or a bare
+// number joined to one by a sign, is not part of the notation and is dropped ("-3d6" and "12+3d6" are both 3d6), which
+// is the span ExtractDicePosition reports for such text. Use Dice.UnmarshalText to reject malformed text instead.
 func (r *Roller) Parse(spec string) Dice {
-	cfg := r.config()
-	return cfg.normalize(parseDice(spec, cfg.MaxCount, cfg.MaxSides, cfg.MaxModifier, cfg.MaxMultiplier))
+	d, _ := parseDice(spec)
+	return r.config().normalize(d)
 }
 
 func nextChar(in string, inPos int) (ch byte, outPos int) {
@@ -155,14 +159,22 @@ func (r *Roller) Minimum(dice Dice) int {
 	return result * dice.Multiplier
 }
 
-// Average returns the average result.
+// Average returns the average result, rounded down to a whole number. The rounding happens only after the multiplier
+// has been applied, so a fractional average (3.5 for a d6) is not truncated before it is multiplied: 1d6x10 averages
+// 35, not 30.
 func (r *Roller) Average(dice Dice) int {
 	dice = r.config().prepare(dice)
 	result := dice.Modifier
+	half := 0
 	if dice.Count > 0 && dice.Sides > 0 {
-		result += dice.Count * (dice.Sides + 1) / 2
+		// count*(sides+1) is twice the dice's average. Carry its odd half separately so the multiplier is applied
+		// before it is rounded away. Config.Valid bounds count*(sides+1), and both products below are bounded by the
+		// (count*sides+modifier)*multiplier total it also checks, since (sides+1)/2 <= sides for any sides >= 1.
+		twice := dice.Count * (dice.Sides + 1)
+		result += twice / 2
+		half = twice & 1
 	}
-	return result * dice.Multiplier
+	return result*dice.Multiplier + half*dice.Multiplier/2
 }
 
 // Maximum returns the maximum result.
