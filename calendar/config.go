@@ -19,34 +19,24 @@ import (
 	"github.com/richardwilkes/toolbox/v2/errs"
 )
 
-// maxDaysPerYear bounds the number of days in the longest year a calendar may have: the sum of every month's Days, plus
-// one for the leap day when the calendar has a leap rule. Years are confined to the int32 range, so the earliest day a
-// Date can occupy is the first day of year math.MinInt32 and the latest is the last day of year math.MaxInt32. On a
-// calendar at this cap those lie at most 2^61 days before 1/1/1 (exactly that on a leap-free calendar) and
-// 2^61 - 2^30 - 1 days after it, even with the densest leap rule Valid allows (every second year). Both sit far short
-// of overflowing an int64 and leave Date.Year's search bounds room to probe past the int32 limits, so every year
-// IsValidYear accepts is representable in full on every calendar Valid accepts. The cap also keeps every
-// day-within-a-year value below 2^31, so those are plain ints throughout the package with no risk of overflow on a
-// 32-bit target.
+// maxDaysPerYear bounds the days in the longest year: the sum of every month's Days plus a leap day. With years
+// confined to the int32 range, every Date then lies within 2^61 days of 1/1/1, well inside an int64 and leaving
+// Date.Year's search room to probe past the int32 limits, and every day-within-a-year fits an int on a 32-bit
+// target.
 const maxDaysPerYear = 1 << 30
 
-// maxWeekDays, maxMonths and maxSeasons bound the number of entries a Config may carry in each of its lists. Real
-// calendars use a handful of each; the caps keep a pathological Config from making every date resolution, ParseDate
-// pattern and text rendering scale with an absurd count, and keep the zero-padded month of the %n directive to two
-// digits.
+// maxWeekDays, maxMonths and maxSeasons bound the length of each of a Config's lists, so a pathological Config cannot
+// make date resolution, the ParseDate patterns or text rendering scale with an absurd count. maxMonths also keeps the
+// %n directive to two digits.
 const (
 	maxWeekDays = 99
 	maxMonths   = 99
 	maxSeasons  = 99
 )
 
-// maxNamesLength bounds the total number of characters across every name a Config carries: its week days, months,
-// seasons and both eras. Its purpose is to keep the ParseDate patterns, which embed every month name (twice, with its
-// abbreviation) and both era names as literals, well inside the size a regular expression may have. regexp refuses an
-// expression past roughly 2^24 characters; quoting a name for literal use at most doubles it, and the rest of a pattern
-// is a few dozen characters, so the patterns built for a Config at this cap are more than a hundred times smaller than
-// that limit. Week day and season names never reach a pattern, but they are counted too so the rule is one budget for
-// the Config as a whole rather than a distinction a data author would have to learn.
+// maxNamesLength bounds the total characters across every name a Config carries, keeping the ParseDate patterns (which
+// embed the month and era names as literals) well inside regexp's size limit. Week day and season names never reach a
+// pattern, but counting them keeps the rule a single budget.
 const maxNamesLength = 1 << 16
 
 var (
@@ -81,12 +71,9 @@ var (
 	})
 )
 
-// Season defines a seasonal period in the calendar. A season is positional within a year and ignores the year itself. A
-// season whose start falls on or before its end covers the single contiguous span between them; a season whose start
-// falls after its end (such as a winter running 11/1 through 2/28) wraps the year boundary and covers everything from
-// the start through the end of the year plus the beginning of the year through the end. A season whose EndDay is the
-// last day of a non-leap month is treated as running through the end of that month, so e.g. a winter ending 2/28 still
-// contains 2/29 in a leap year (in a non-leap year that day simply does not occur, so the extension is harmless).
+// Season defines a seasonal period in the calendar, positional within a year. A season whose start falls after its end
+// (such as a winter running 11/1 through 2/28) wraps the year boundary. A season ending on the last day of the leap
+// month also contains the leap day, so a winter ending 2/28 still contains 2/29 in a leap year.
 type Season struct {
 	Name       string `json:"name"`
 	StartMonth int    `json:"start_month" yaml:"start_month"`
@@ -117,11 +104,9 @@ type LeapYear struct {
 	Unless int `json:"unless,omitempty" yaml:",omitempty"`
 }
 
-// Config holds the configuration data for a Calendar. Seasons may be empty. A season whose start falls after its end is
-// permitted: it is interpreted as wrapping the year boundary (see Date.Season). Seasons are likewise permitted to
-// overlap one another or to leave gaps in the year; neither is treated as an error. A Config may hold at most 99 week
-// days, 99 months and 99 seasons, and its names -- the week days, months, seasons and both eras together -- may total
-// at most 65,536 characters.
+// Config holds the configuration data for a Calendar. Seasons may be empty, may wrap the year boundary (see Season),
+// and may overlap or leave gaps. A Config may hold at most 99 week days, 99 months and 99 seasons, and its names (week
+// days, months, seasons and both eras together) may total at most 65,536 characters.
 type Config struct {
 	LeapYear       *LeapYear `json:"leapyear,omitempty" yaml:",omitempty"`
 	Era            string    `json:"era,omitempty" yaml:",omitempty"`
@@ -184,8 +169,7 @@ func (c *Config) Valid() error {
 		if c.Months[i].Days < 1 {
 			return errs.New("months must contain at least 1 day")
 		}
-		// Cap the running total of days per year (see maxDaysPerYear). The check is written against the remaining
-		// budget so a single huge Days value cannot itself overflow the sum before the limit is caught.
+		// Checked against the remaining budget so a huge Days value cannot overflow the sum.
 		if c.Months[i].Days > maxDaysPerYear-totalDays {
 			return errs.Newf("the total number of days across all months may not exceed %d", maxDaysPerYear)
 		}
@@ -195,8 +179,7 @@ func (c *Config) Valid() error {
 		if c.LeapYear.Month < 1 || c.LeapYear.Month > len(c.Months) {
 			return errs.New("LeapYear.Month must specify a valid month")
 		}
-		// The leap day is one more day on top of the month total, so a calendar with a leap rule must leave room for
-		// it under the cap (see maxDaysPerYear).
+		// The leap day must also fit under the cap.
 		if totalDays >= maxDaysPerYear {
 			return errs.Newf("the total number of days across all months, plus the leap day, may not exceed %d",
 				maxDaysPerYear)
@@ -256,13 +239,10 @@ func (c *Config) Valid() error {
 	if (c.PreviousEra == "") != (c.Era == "") {
 		return errs.New("era and previous era must either both be set or neither set")
 	}
-	// ParseDate matches an era suffix without regard to case, so two labels that differ only in case cannot be told
-	// apart there, even though they read as distinct when formatting (see Config.distinctEras).
+	// ParseDate matches era suffixes without regard to case, so such labels could not be told apart.
 	if c.Era != c.PreviousEra && strings.EqualFold(c.Era, c.PreviousEra) {
 		return errs.New("era and previous era may not differ only in letter case")
 	}
-	// The names are budgeted as a whole (see maxNamesLength). Unlike the month days, a name's length is bounded by
-	// what fits in memory, and the number of names is capped above, so the sum cannot overflow.
 	length := utf8.RuneCountInString(c.Era) + utf8.RuneCountInString(c.PreviousEra)
 	for _, weekDay := range c.WeekDays {
 		length += utf8.RuneCountInString(weekDay)
@@ -311,9 +291,8 @@ func PathfinderImperialCalendar() *Calendar {
 	return imperial
 }
 
-// newPathfinderCalendar builds the shared Pathfinder calendar structure, which differs between the variants only in the
-// era name (the same name serves as both the current and previous era). Each call returns an independent Calendar built
-// from fresh component slices.
+// newPathfinderCalendar builds a Pathfinder calendar; the variants differ only in the era name, which serves as both
+// the current and previous era.
 func newPathfinderCalendar(era string) *Calendar {
 	return newCalendar(&Config{
 		WeekDays: []string{

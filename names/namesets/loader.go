@@ -20,9 +20,8 @@ import (
 	"github.com/richardwilkes/toolbox/v2/xos"
 )
 
-// MustLoadFromReader loads a name set from the provided reader. The data should consist of lines of text, each of which
-// contains a name and a count, separated by a comma. As with LoadFromReader, a single line longer than roughly 64KB is
-// rejected; here that error terminates the process, so this is intended for known-good data such as an embedded corpus.
+// MustLoadFromReader loads a name set as LoadFromReader does, but any error terminates the process, so it is intended
+// for known-good data such as an embedded corpus.
 func MustLoadFromReader(r io.Reader) map[string]int {
 	m, err := LoadFromReader(r)
 	xos.ExitIfErr(err)
@@ -31,16 +30,13 @@ func MustLoadFromReader(r io.Reader) map[string]int {
 
 // LoadFromReader loads a name set from the provided reader. The data should consist of lines of text, each of which
 // contains a name optionally followed by a comma and a count. A count is recognized only when the text after the final
-// comma parses as an integer; a dangling trailing comma (with nothing after it) is dropped, and any other comma is part
-// of the name, so a name that itself contains a comma, such as "Smith, Jr.", is kept intact rather than truncated. When
-// no count is given a value of 1 is assumed. Counts for a name that appears on more than one line accumulate, and a
-// name whose accumulated total is less than 1 is removed from the returned set (matching the namer constructors). A
-// data author can therefore suppress a name that appears only once by giving it a count of 0, or offset earlier lines
-// with a negative count; a count of 0 on its own adds nothing, so "Bob,5" followed by "Bob,0" leaves Bob at 5.
+// comma parses as an integer; a dangling trailing comma is dropped, and any other comma is part of the name ("Smith,
+// Jr."). When no count is given, 1 is assumed. Counts for a name that appears on more than one line accumulate, and a
+// name whose total is less than 1 is removed from the returned set, so a count of 0 suppresses a name that appears only
+// once and a negative count offsets earlier lines.
 //
-// Lines are read with the default bufio.Scanner buffer, so a single line longer than roughly 64KB is not split or
-// truncated: the scan stops at that line and a non-nil error is returned along with the names accumulated so far. A
-// well-formed name set, with one short name per line, never approaches this limit.
+// Lines are read with the default bufio.Scanner buffer, so a single line longer than roughly 64KB stops the scan: the
+// names accumulated so far are returned along with a non-nil error.
 func LoadFromReader(r io.Reader) (map[string]int, error) {
 	m := make(map[string]int)
 	scanner := bufio.NewScanner(r)
@@ -59,14 +55,8 @@ func LoadFromReader(r io.Reader) (map[string]int, error) {
 		if name = strings.TrimSpace(name); name == "" {
 			continue
 		}
-		// Accumulate in int64 and saturate the per-name total at the int32 range. Without this, two very large counts
-		// for the same name could wrap a platform int negative, and the "< 1" filter below would then delete the name
-		// entirely. The math.MaxInt32 ceiling matches the weight cap the namer constructors apply, while a net total
-		// below 1 is left as-is so it still suppresses the name.
 		m[name] = saturatingAddInt32(m[name], count)
 	}
-	// Drop names whose accumulated count is less than 1 so the returned set never contains a name that was suppressed
-	// with a count of 0 (or one whose positive and negative counts canceled out).
 	for name, count := range m {
 		if count < 1 {
 			delete(m, name)
@@ -75,10 +65,9 @@ func LoadFromReader(r io.Reader) (map[string]int, error) {
 	return m, errs.Wrap(scanner.Err())
 }
 
-// saturatingAddInt32 returns sum + delta with both the addend and the running total clamped to the int32 range, so a
-// pathologically large or repeated count can neither wrap a platform int nor exceed the math.MaxInt32 weight ceiling
-// the namers use. A net total below 1 is left negative or zero so the caller's suppression filter still removes the
-// name.
+// saturatingAddInt32 returns sum + delta with both delta and the total clamped to the int32 range, so huge counts can
+// neither wrap a platform int nor exceed the maxWeight ceiling the namers apply, while a total below 1 still suppresses
+// the name.
 func saturatingAddInt32(sum int, delta int64) int {
 	delta = min(max(delta, math.MinInt32), math.MaxInt32)
 	total := min(max(int64(sum)+delta, math.MinInt32), math.MaxInt32)

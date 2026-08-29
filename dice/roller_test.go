@@ -145,9 +145,8 @@ func TestApplyExtraDiceFromModifiersRespectsMaxCount(t *testing.T) {
 		c.True(d.Count <= 2, desc)
 	}
 
-	// Regression for the unbounded-count finding: with MaxCount==1 a large modifier previously ballooned Count to
-	// hundreds of thousands (an effective hang, since Roll iterates Count times). Now no dice can be added past the
-	// cap, so Count stays at 1 and the whole modifier is retained.
+	// With MaxCount 1 a large modifier once ballooned Count to hundreds of thousands; no dice may be added past the
+	// cap.
 	r1 := newCapped(1)
 	d := r1.ApplyExtraDiceFromModifiers(r1.Parse("1d2+999999"))
 	c.Equal(1, d.Count)
@@ -172,7 +171,7 @@ func TestStringRoundTrip(t *testing.T) {
 		{"3d8-13", "3d8-13"}, // 6
 		{"4", "4"},           // 7
 		{"-1", "-1"},         // 8
-		{"x3", "0"},          // 9 - degnerate, no dice and no modifiers results in just 0
+		{"x3", "0"},          // 9 - degenerate: no dice and no modifier is 0
 	} {
 		desc := fmt.Sprintf("Table index %d: %s", i, one.Text)
 		d := r.Parse(one.Text)
@@ -184,11 +183,8 @@ func TestStringRoundTrip(t *testing.T) {
 
 func TestMarshalTextRoundTrip(t *testing.T) {
 	c := check.New(t)
-	// MarshalText normalizes the receiver before formatting, so a Dice with a degenerate field -- an orphan Sides or
-	// Count, or a Multiplier <= 0 that the text grammar cannot express -- marshals to its normalized form and reparses
-	// back to that same Dice. Each row pairs the expected text with the raw input that must marshal to it and the Dice
-	// that text must unmarshal to; re-marshaling the reparsed Dice must reproduce the text, proving a stable
-	// round-trip.
+	// MarshalText normalizes before formatting, so a degenerate Dice marshals to its normalized form, reparses to
+	// Reparsed, and re-marshals to the same text.
 	for i, one := range []struct {
 		Text     string
 		In       dice.Dice
@@ -269,9 +265,7 @@ func TestRollSingleSided(t *testing.T) {
 	}
 }
 
-// topFaceRandomizer always reports the highest face (n-1), making a roll deterministic: every die contributes its
-// maximum, so the total equals Maximum(). This both removes randomness from the assertion and proves the loop ran for
-// each clamped die.
+// topFaceRandomizer always reports the highest face, so a roll equals Maximum and proves the loop ran for every die.
 type topFaceRandomizer struct{}
 
 func (topFaceRandomizer) Intn(n int) int {
@@ -281,8 +275,8 @@ func (topFaceRandomizer) Intn(n int) int {
 	return n - 1
 }
 
-// TestExtraDiceFromModifiersChangesResults pins down that ExtraDiceFromModifiers is not a display-only option: with it
-// set, Roll, Minimum, Average and Maximum all operate on the converted dice, so the range of results shifts.
+// TestExtraDiceFromModifiersChangesResults pins that ExtraDiceFromModifiers changes Roll, Minimum, Average and Maximum,
+// not just Format.
 func TestExtraDiceFromModifiersChangesResults(t *testing.T) {
 	c := check.New(t)
 	plain := newRoller(c, topFaceRandomizer{}, false, false)
@@ -301,7 +295,7 @@ func TestExtraDiceFromModifiersChangesResults(t *testing.T) {
 	c.Equal(19, extra.Maximum(d))
 	c.Equal(19, extra.Roll(d))
 
-	// With a real randomizer, the roll ranges over the converted dice's [4,19] rather than [9,14].
+	// With a real randomizer, the roll ranges over [4,19] rather than [9,14].
 	extra = newRoller(c, nil, false, true)
 	for range 100 {
 		got := extra.Roll(d)
@@ -313,10 +307,9 @@ func TestRollTerminatesOnHugeCount(t *testing.T) {
 	c := check.New(t)
 	r := newRoller(c, nil, false, false)
 	rd := newRoller(c, topFaceRandomizer{}, false, false)
-	// Regression: a roll iterates Count times, so Count must be clamped to dice.MaxValue before the loop runs;
-	// otherwise an enormous count is an effective hang. Cover both the parsed spec (extractValue caps the number) and a
-	// field set directly to math.MaxInt, which bypasses the parser's cap and relies solely on the clamp inside the
-	// roll. Run each roll in a goroutine so a regression times out rather than hanging the whole suite.
+	// Count must be clamped to MaxCount before the roll loop. Cover both a parsed spec and a field set directly to
+	// math.MaxInt, which bypasses the parser's cap. Each roll runs in a goroutine so a regression times out rather than
+	// hanging the suite.
 	for i, d := range []dice.Dice{
 		r.Parse("99999999999999999999d6"),
 		{Count: math.MaxInt, Sides: 6, Multiplier: 1},
@@ -326,8 +319,8 @@ func TestRollTerminatesOnHugeCount(t *testing.T) {
 		maximum := r.Maximum(d)
 		done := make(chan [2]int, 1)
 		go func() {
-			// Roll() (the public entry point at line 230) uses crypto rand, so only its range can be checked.
-			// RollWithRandomizer pinned to the top face must equal Maximum(), proving every clamped die was rolled.
+			// Only the range of the real roll can be checked; the top-face roll must equal Maximum, proving every
+			// clamped die was rolled.
 			done <- [2]int{r.Roll(d), rd.Roll(d)}
 		}()
 		select {
@@ -344,12 +337,11 @@ func TestIsEquivalent(t *testing.T) {
 	c := check.New(t)
 	r := newRoller(c, nil, false, false)
 
-	// Differences that normalize away (a sub-1 multiplier becomes 1) are still equivalent.
+	// Differences that normalize away are still equivalent.
 	a := dice.Dice{Count: 1, Sides: 6, Modifier: 2, Multiplier: 1}
 	b := dice.Dice{Count: 1, Sides: 6, Modifier: 2, Multiplier: 0}
 	c.True(r.IsEquivalent(a, b))
 
-	// Genuinely different dice are not equivalent.
 	c.False(r.IsEquivalent(a, dice.Dice{Count: 2, Sides: 6, Modifier: 2, Multiplier: 1}))
 }
 
@@ -358,8 +350,7 @@ func TestPoolProbability(t *testing.T) {
 	r := newRoller(c, nil, false, false)
 	d := dice.Dice{Count: 3, Sides: 6}
 
-	// Regression: a non-positive target is met by every roll, so the probability must be exactly 1,
-	// never greater than 1 as it was previously (e.g. 1.0046 for target 0).
+	// A non-positive target is met by every roll, so the probability is exactly 1.
 	for _, target := range []int{0, -1, -100} {
 		c.Equal(1.0, r.PoolProbability(d, target), "target %d", target)
 	}
@@ -370,7 +361,7 @@ func TestPoolProbability(t *testing.T) {
 	// A target beyond the number of sides is impossible.
 	c.Equal(0.0, r.PoolProbability(d, 7))
 
-	// No dice, or a zero-sided die (which cannot roll), yields 0 rather than a division by zero.
+	// No dice, or a zero-sided die, yields 0 rather than a division by zero.
 	c.Equal(0.0, r.PoolProbability(dice.Dice{Count: 0, Sides: 6}, 3))
 	c.Equal(0.0, r.PoolProbability(dice.Dice{Count: 3, Sides: 0}, 3))
 	c.Equal(0.0, r.PoolProbability(dice.Dice{Count: 3, Sides: 0}, 0))
@@ -379,8 +370,7 @@ func TestPoolProbability(t *testing.T) {
 	c.True(math.Abs(r.PoolProbability(d, 6)-91.0/216.0) < 1e-12, "3d6 >=6 probability = %v, want ~%v",
 		r.PoolProbability(d, 6), 91.0/216.0)
 
-	// Across the valid range the probability stays within [0,1] and strictly decreases as the target
-	// rises.
+	// The probability stays within [0,1] and strictly decreases as the target rises.
 	prev := 2.0
 	for target := 1; target <= 6; target++ {
 		p := r.PoolProbability(d, target)
@@ -397,9 +387,7 @@ func TestPoolProbabilityHonorsExtraDiceFromModifiers(t *testing.T) {
 	d := plain.Parse("1d6+8")
 	c.Equal(dice.Dice{Count: 1, Sides: 6, Modifier: 8, Multiplier: 1}, d)
 
-	// Regression: PoolProbability normalized the dice while every other method prepared them, so with
-	// ExtraDiceFromModifiers set it still answered for the single die of 1d6+8 (1/6) even though Roll, Format and the
-	// rest treat that as 3d6+1. It must see the same three-die pool they do: 1-(5/6)^3 = 91/216.
+	// PoolProbability must see the same three-die pool Roll, Format and the rest do: 1-(5/6)^3 = 91/216.
 	c.Equal("3d6+1", extra.Format(d))
 	c.Equal(4, extra.Minimum(d))
 	got := extra.PoolProbability(d, 6)
@@ -416,8 +404,7 @@ func TestExtractValueOverflow(t *testing.T) {
 	cfg := r.Config()
 	const huge = "99999999999999999999" // 20 nines: far larger than the field cap
 
-	// Each numeric field caps at dice.MaxValue rather than wrapping or exceeding the permitted range, and parsing still
-	// continues past the oversized number.
+	// Each field caps at the Config's Max* value and parsing continues past the oversized number.
 	d := r.Parse(huge + "d6")
 	c.Equal(cfg.MaxCount, d.Count)
 	c.Equal(6, d.Sides)
@@ -429,7 +416,7 @@ func TestExtractValueOverflow(t *testing.T) {
 	d = r.Parse("d6+" + huge)
 	c.Equal(cfg.MaxModifier, d.Modifier)
 
-	// A negative modifier caps at -MaxModifier rather than wrapping past the permitted range.
+	// A negative modifier caps at -MaxModifier.
 	d = r.Parse("d6-" + huge)
 	c.Equal(-cfg.MaxModifier, d.Modifier)
 
@@ -448,10 +435,7 @@ func TestUnmarshalTextCapsOversizedNumbers(t *testing.T) {
 	c := check.New(t)
 	const huge = "99999999999999999999" // 20 nines: larger than math.MaxInt
 	const fieldCap = math.MaxInt - 1    // UnmarshalText parses against maxFieldValue, one below math.MaxInt
-	// Regression: UnmarshalText caps each field at maxFieldValue. extractValue must reach that cap without overflowing
-	// an int along the way; previously value*10 wrapped past math.MaxInt and the cap check never fired, storing a
-	// garbage (and sometimes negative) value instead. Each field must end up exactly at the cap, never negative and
-	// never at the bare math.MaxInt that would let a later sides+1 intermediate wrap.
+	// extractValue must reach the cap without overflowing along the way.
 	var d dice.Dice
 	c.NoError(d.UnmarshalText([]byte(huge + "d6")))
 	c.Equal(fieldCap, d.Count)
@@ -474,9 +458,7 @@ func TestUnmarshalTextCapsOversizedNumbers(t *testing.T) {
 func TestUnmarshalTextSaturatesBareNumberSum(t *testing.T) {
 	c := check.New(t)
 	const fieldCap = math.MaxInt - 1 // UnmarshalText parses against maxFieldValue, one below math.MaxInt
-	// Regression: a bare number with a signed modifier ("5+3") folds the count into the modifier. Each half is capped
-	// at maxFieldValue individually, but their sum was not, so two large halves wrapped to a sign-flipped garbage
-	// value (e.g. -8446744073709551616 below). The sum must saturate at the cap instead.
+	// The halves of a bare number ("5+3") are capped individually, so their sum must saturate rather than wrap.
 	var d dice.Dice
 	c.NoError(d.UnmarshalText([]byte("5000000000000000000+5000000000000000000")))
 	c.Equal(fieldCap, d.Modifier)
@@ -485,7 +467,7 @@ func TestUnmarshalTextSaturatesBareNumberSum(t *testing.T) {
 	c.NoError(d.UnmarshalText([]byte("99999999999999999999+99999999999999999999")))
 	c.Equal(fieldCap, d.Modifier)
 
-	// The boundary: exactly at the cap on either side of the sign is unchanged, one past it saturates.
+	// Exactly at the cap on either side of the sign is unchanged; one past it saturates.
 	capText := strconv.Itoa(fieldCap)
 	c.NoError(d.UnmarshalText([]byte(capText + "+0")))
 	c.Equal(fieldCap, d.Modifier)
@@ -496,7 +478,7 @@ func TestUnmarshalTextSaturatesBareNumberSum(t *testing.T) {
 	c.NoError(d.UnmarshalText([]byte("1+" + capText)))
 	c.Equal(fieldCap, d.Modifier)
 
-	// A negative modifier cannot overflow when the count is added back, and the largest magnitudes cancel exactly.
+	// A difference cannot overflow, and the largest magnitudes cancel exactly.
 	c.NoError(d.UnmarshalText([]byte("5000000000000000000-5000000000000000000")))
 	c.Equal(0, d.Modifier)
 	c.NoError(d.UnmarshalText([]byte(capText + "-" + capText)))
@@ -511,8 +493,8 @@ func TestUnmarshalTextSaturatesBareNumberSum(t *testing.T) {
 	c.Equal(-3, d.Modifier)
 }
 
-// TestParseClampsBareNumberSumToMaxModifier verifies the folded bare-number sum is clamped to the Roller's MaxModifier
-// even when MaxCount alone would allow a larger value, since the count becomes part of the modifier.
+// TestParseClampsBareNumberSumToMaxModifier pins that the folded bare-number sum is clamped to MaxModifier, not
+// MaxCount.
 func TestParseClampsBareNumberSumToMaxModifier(t *testing.T) {
 	c := check.New(t)
 	cfg := dice.DefaultConfig()
@@ -525,15 +507,12 @@ func TestParseClampsBareNumberSumToMaxModifier(t *testing.T) {
 	c.Equal(-5, r.Parse("0-50").Modifier)
 	c.Equal(4, r.Parse("3+1").Modifier)
 	c.Equal(0, r.Parse("50+3").Count)
-	// The clamp applies to the sum, not to each half: 50-60 is -10, which clamps to -5, rather than the +5 that clamping
-	// the halves first (50 and -5, summing to 45) would give.
+	// The clamp applies to the sum, not each half: 50-60 is -10, which clamps to -5.
 	c.Equal(-5, r.Parse("50-60").Modifier)
 }
 
-// TestParseBareNumberNotCappedAtMaxCount is the regression for a bare number being read with MaxCount as its cap even
-// though, with no die marker after it, it is a modifier: with MaxCount below MaxModifier an ordinary modifier was
-// silently shrunk, so "15" parsed as 10 and Format followed by Parse did not round-trip. (The default Config hid this
-// because its MaxCount and MaxModifier are equal.)
+// TestParseBareNumberNotCappedAtMaxCount pins that a bare number, being a modifier, is not capped at MaxCount, so
+// Format followed by Parse round-trips when MaxCount is below MaxModifier.
 func TestParseBareNumberNotCappedAtMaxCount(t *testing.T) {
 	c := check.New(t)
 	cfg := dice.DefaultConfig()
@@ -558,10 +537,8 @@ func TestParseBareNumberNotCappedAtMaxCount(t *testing.T) {
 	c.Equal(dice.Dice{Count: 10, Sides: 6, Multiplier: 1}, r.Parse("15d6"))
 }
 
-// TestParseSignedDiceSpecAgreesWithExtractor is the regression for a sign-prefixed or sign-joined dice spec losing its
-// dice: Parse("+3d6") was the modifier 3 and Parse("12+3d6") was 15, the d6 silently discarded, while
-// ExtractDicePosition reports "3d6" as the spec in both. Parse now treats such text as the extractor does -- neither
-// the sign nor the number before it is part of the notation -- so the two agree.
+// TestParseSignedDiceSpecAgreesWithExtractor pins that Parse treats a sign-prefixed or sign-joined dice spec as
+// ExtractDicePosition does: neither the sign nor the number before it is part of the notation.
 //
 //nolint:goconst // The tests are more readable without constants for duplicated string
 func TestParseSignedDiceSpecAgreesWithExtractor(t *testing.T) {
@@ -596,9 +573,8 @@ func TestParseSignedDiceSpecAgreesWithExtractor(t *testing.T) {
 	}
 }
 
-// TestAverageMultipliesBeforeRounding is the regression for Average truncating the dice's fractional average before
-// applying the multiplier, which multiplied the rounding error: 1d6x10 returned 30 rather than 35. The result is now
-// the exact average times the multiplier, rounded down.
+// TestAverageMultipliesBeforeRounding pins that Average applies the multiplier before rounding down: 1d6x10 is 35, not
+// 30.
 func TestAverageMultipliesBeforeRounding(t *testing.T) {
 	c := check.New(t)
 	r := newRoller(c, nil, false, false)
@@ -621,8 +597,8 @@ func TestAverageMultipliesBeforeRounding(t *testing.T) {
 	}
 }
 
-// TestUnmarshalTextRejectsMalformedInput is the regression for UnmarshalText never returning an error, so that wholly
-// unparseable data silently decoded to the zero spec "0" and trailing garbage was silently dropped.
+// TestUnmarshalTextRejectsMalformedInput pins that UnmarshalText reports wholly unparseable data and trailing garbage
+// as errors.
 //
 //nolint:goconst // The tests are more readable without constants for duplicated string
 func TestUnmarshalTextRejectsMalformedInput(t *testing.T) {
@@ -639,12 +615,10 @@ func TestUnmarshalTextRejectsMalformedInput(t *testing.T) {
 	} {
 		d := dice.Dice{Count: 2, Sides: 4, Modifier: 1, Multiplier: 1}
 		c.HasError(d.UnmarshalText([]byte(text)), "%q", text)
-		// The Dice is left untouched on error.
 		c.Equal(dice.Dice{Count: 2, Sides: 4, Modifier: 1, Multiplier: 1}, d, "%q", text)
 	}
 
-	// Well-formed text, including whatever Parse consumes in full (shorthand, dangling operators, a sign-prefixed spec)
-	// and empty text, is accepted.
+	// Well-formed text, including whatever Parse consumes in full and empty text, is accepted.
 	for i, one := range []struct {
 		Text     string
 		Expected dice.Dice
@@ -667,9 +641,8 @@ func TestUnmarshalTextRejectsMalformedInput(t *testing.T) {
 	}
 }
 
-// TestMarshalTextUsesDefaultGURPSFormat pins that MarshalText honors the default Config's GURPSFormat setting, and that
-// it reads just that one setting rather than cloning the whole default Config per call: the only allocation is the
-// []byte it returns.
+// TestMarshalTextUsesDefaultGURPSFormat pins that MarshalText honors the default GURPSFormat without cloning the
+// default Config: the only allocation is the returned []byte.
 func TestMarshalTextUsesDefaultGURPSFormat(t *testing.T) {
 	c := check.New(t)
 	original := dice.DefaultConfig()
@@ -693,10 +666,7 @@ func TestMarshalTextUsesDefaultGURPSFormat(t *testing.T) {
 }
 
 // TestZeroRollerFetchesDefaultConfigOnce pins that a zero-value or nil Roller takes exactly one copy of the default
-// Config per exported method call. Each call is measured against the same call on a configured Roller, which never
-// copies its Config, and must cost exactly one allocation more: the copy DefaultConfig returns. Previously Roll fetched
-// the default three times (prepare, Normalize and the roll loop), tripling the cost and letting a concurrent
-// SetDefaultConfig be observed part-way through a single call.
+// Config per exported call: one allocation more than a configured Roller.
 func TestZeroRollerFetchesDefaultConfigOnce(t *testing.T) {
 	c := check.New(t)
 	configured := newRoller(c, nil, false, false)
@@ -722,7 +692,7 @@ func TestZeroRollerFetchesDefaultConfigOnce(t *testing.T) {
 		c.Equal(want, testing.AllocsPerRun(100, func() { one.call(&zero) }), one.name)
 		c.Equal(want, testing.AllocsPerRun(100, func() { one.call(nilRoller) }), one.name+" on a nil Roller")
 	}
-	// Config returns the copy DefaultConfig made rather than cloning it a second time.
+	// Config returns the copy DefaultConfig made rather than cloning it again.
 	c.Equal(1.0, testing.AllocsPerRun(100, func() { zero.Config() }))
 	c.Equal(1.0, testing.AllocsPerRun(100, func() { nilRoller.Config() }))
 }
@@ -736,36 +706,33 @@ func TestDiceHash(t *testing.T) {
 	}
 	base := dice.Dice{Count: 3, Sides: 6, Modifier: 2, Multiplier: 1}
 	want := digest(&base)
-	// Deterministic for equal contents.
 	c.Equal(want, digest(&dice.Dice{Count: 3, Sides: 6, Modifier: 2, Multiplier: 1}))
-	// Every field contributes to the digest.
+	// Every field contributes.
 	c.NotEqual(want, digest(&dice.Dice{Count: 3, Sides: 6, Modifier: 1, Multiplier: 1}))
 	c.NotEqual(want, digest(&dice.Dice{Count: 2, Sides: 6, Modifier: 2, Multiplier: 1}))
 	c.NotEqual(want, digest(&dice.Dice{Count: 3, Sides: 8, Modifier: 2, Multiplier: 1}))
 	c.NotEqual(want, digest(&dice.Dice{Count: 3, Sides: 6, Modifier: 2, Multiplier: 2}))
-	// The fields are hashed in a fixed order, so swapping two values changes the digest.
+	// The fields are hashed in a fixed order.
 	c.NotEqual(digest(&dice.Dice{Count: 3, Sides: 6}), digest(&dice.Dice{Count: 6, Sides: 3}))
-	// A nil receiver writes nothing, leaving the hasher in its initial state.
+	// A nil receiver writes nothing.
 	var nilDice *dice.Dice
 	h := sha256.New()
 	c.NotPanics(func() { nilDice.Hash(h) })
 	c.Equal(sha256.New().Sum(nil), h.Sum(nil))
 }
 
-// bigEvenAdjust independently computes the even-sided modifier-to-extra-dice conversion using arbitrary-precision math,
-// providing a reference that is immune to fixed-width arithmetic mistakes regardless of how large the inputs grow. It
-// mirrors the package rule: an even-sided die's true average is average+0.5, k = floor(2*modifier/(2*average+1)) dice
-// are extracted, and those dice consume ceil(k*(2*average+1)/2) of the modifier, leaving the remainder.
+// bigEvenAdjust computes the even-sided conversion with arbitrary-precision math as a reference: k =
+// floor(2*modifier/(2*average+1)) dice are extracted, consuming ceil(k*(2*average+1)/2) of the modifier.
 func bigEvenAdjust(count, sides, modifier int) (wantCount, wantModifier int) {
 	average := (sides + 1) / 2
 	perPair := big.NewInt(int64(2*average + 1))
 	m := big.NewInt(int64(modifier))
-	k := new(big.Int).Quo(new(big.Int).Lsh(m, 1), perPair) // equivalent to floor(2*modifier / perPair)
+	k := new(big.Int).Quo(new(big.Int).Lsh(m, 1), perPair)
 	cost := new(big.Int).Mul(k, perPair)
-	if k.Bit(0) == 1 { // k odd: the half-die rounds up
+	if k.Bit(0) == 1 { // the half-die rounds up
 		cost.Add(cost, big.NewInt(1))
 	}
-	cost.Rsh(cost, 1) // /2
+	cost.Rsh(cost, 1)
 	r := new(big.Int).Sub(m, cost)
 	return count + int(k.Int64()), int(r.Int64())
 }
@@ -774,9 +741,8 @@ func TestExtraDiceEvenSidedMatchesReference(t *testing.T) {
 	c := check.New(t)
 	r := newRoller(c, nil, false, false)
 	cfg := r.Config()
-	// Converting modifiers to extra dice for even-sided dice must match an independent reference exactly. The small
-	// modifiers lock in the prior shipped behavior; the large ones (up to the field cap) exercise the path where the
-	// previous O(modifier) loop would have hung.
+	// The conversion must match the reference exactly; the large modifiers exercise the path where an O(modifier) loop
+	// would hang.
 	for _, sides := range []int{2, 4, 6, 8, 10, 12, 20, 100} {
 		for mod := 0; mod <= 600; mod++ {
 			d := dice.Dice{Count: 1, Sides: sides, Modifier: mod, Multiplier: 1}
@@ -786,8 +752,7 @@ func TestExtraDiceEvenSidedMatchesReference(t *testing.T) {
 			c.Equal(wantMod, d.Modifier, "sides=%d mod=%d modifier", sides, mod)
 		}
 	}
-	// Exercise the largest in-range even-sided value; mask off the low bit rather than assuming dice.MaxValue is even.
-	largestEvenSides := cfg.MaxSides &^ 1
+	largestEvenSides := cfg.MaxSides &^ 1 // do not assume MaxSides is even
 	for _, sides := range []int{2, 4, 6, 8, 100, largestEvenSides} {
 		for _, mod := range []int{99999, 500000, cfg.MaxSides / 3, cfg.MaxSides - 1, cfg.MaxSides} {
 			d := dice.Dice{Count: 1, Sides: sides, Modifier: mod, Multiplier: 1}
@@ -827,8 +792,7 @@ func TestExtractFirstPosition(t *testing.T) {
 		{"and 13 years later...", -1, -1},    // 7
 		{"and +13 years later...", -1, -1},   // 8
 		{"and -13 years later...", -1, -1},   // 9
-		// A 'd' with no digit after it is not dice notation; the trailing bare number that follows must not be
-		// reported as the spec, matching how bare numbers (cases 7-9) are ignored.
+		// A 'd' with no digit after it is not notation and must not let the trailing bare number be reported.
 		{"d 5", -1, -1},  // 10
 		{"d-5", -1, -1},  // 11
 		{"d+5", -1, -1},  // 12
@@ -842,17 +806,14 @@ func TestExtractFirstPosition(t *testing.T) {
 		{"5", 0, 1},      // 18
 		{"13", 0, 2},     // 19
 		{"roll 5", 5, 6}, // 20
-		// A 'd' that is part of an ordinary word is not a discarded die marker, so it must not suppress a trailing
-		// bare number the way a standalone 'd' (cases 10-14) does. The number stays reportable, exactly as it is
-		// after a 'd'-free word like "roll" (case 20) or "the".
+		// A 'd' inside a word is not a discarded die marker, so a trailing bare number stays reportable.
 		{"read 5", 5, 6}, // 21 - 'd' at the end of a word
 		{"old 5", 4, 5},  // 22 - 'd' at the end of a word
 		{"add 5", 4, 5},  // 23 - 'd' at the end of a word
 		{"hold 5", 5, 6}, // 24 - 'd' at the end of a word
 		{"drum 5", 5, 6}, // 25 - 'd' at the start of a word (followed by a prose letter)
 		{"the 5", 4, 5},  // 26 - control: a word without any 'd' already worked
-		// A spec that ends with an operator but no operand: the dangling '+'/'-'/'x' (and any trailing spaces) must be
-		// excluded from the returned span so a consumer slicing text[start:end] gets just the dice spec.
+		// A dangling trailing operator is excluded from the span.
 		{"d6+", 0, 2},    // 27
 		{"d6-", 0, 2},    // 28
 		{"3d6x", 0, 3},   // 29
@@ -860,31 +821,25 @@ func TestExtractFirstPosition(t *testing.T) {
 		{"2d6+2x", 0, 5}, // 31 - trailing 'x' trimmed, modifier retained
 		{"d6+ ", 0, 2},   // 32 - operator followed by a trailing space
 		{"3d", 0, 2},     // 33 - control: a trailing 'd' (meaning d6) is a valid operand, not trimmed
-		// A lone 'd' with no digit is not a dice spec, even when it runs to the end of the text (where there is no
-		// following character to trigger the discard mid-scan).
+		// A lone 'd' is not a spec even at the end of the text.
 		{"d", -1, -1},      // 34
 		{"roll d", -1, -1}, // 35
-		// A trailing bare number followed only by spaces is still the spec; the spaces are trimmed. Contrast a bare
-		// number followed by prose ("13 years", cases 7-9), which is not reported.
+		// Trailing spaces after a bare number are trimmed; a bare number followed by prose (cases 7-9) is not reported.
 		{"5 ", 0, 1},      // 36
 		{"roll 5 ", 5, 6}, // 37
 		{"13 ", 0, 2},     // 38
 		// A bare number is reported only when it is the final token; a later token supersedes an earlier bare number.
 		{"5 5", 2, 3}, // 39
-		// A space between an operator and its operand ends the spec, matching New (which stops at the inner space and
-		// drops the operand), so the span excludes the unparsed tail rather than over-reporting it.
+		// A space between an operator and its operand ends the spec, as it does in Parse.
 		{"3d6+ 2", 0, 3}, // 40
 		{"d6- 5", 0, 2},  // 41
-		// A sign immediately followed by a multiplier has no operand of its own, so it is dangling: New drops the sign
-		// and keeps the multiplier ("d6+x2" parses to "d6x2"). A contiguous span cannot reproduce that, so the spec
-		// ends at the dangling sign and the trim drops it, yielding just the dice (never an interior dangling sign).
+		// A sign directly followed by a multiplier is dangling, so the spec ends before it and the sign is trimmed.
 		{"d6+x2", 0, 2},  // 42
 		{"d6-x2", 0, 2},  // 43
 		{"3d6+x5", 0, 3}, // 44
 		{"5+x2", 0, 1},   // 45
 		{"d6+X2", 0, 2},  // 46 - uppercase multiplier
-		// A sign with no candidate before it is prose, not a dangling operator: it must not end the scan, so a spec
-		// later in the text is still found. Nor is the sign part of the span, which always begins with a digit or 'd'.
+		// A sign with no candidate before it is prose, so the scan continues; the span never starts with a sign.
 		{"Deal +2d6 fire damage", 6, 9}, // 47
 		{"cost + 3d6 damage", 7, 10},    // 48
 		{"+3d6", 1, 4},                  // 49
@@ -892,35 +847,28 @@ func TestExtractFirstPosition(t *testing.T) {
 		{"+-3d6", 2, 5},                 // 51 - repeated leading signs
 		{"+3d6+2", 1, 6},                // 52 - a real modifier after the spec is kept
 		{"-5x2 3d6", 5, 8},              // 53 - a signed bare number with a multiplier is skipped, not the whole scan
-		// A signed bare number is never reported (contrast the unsigned "5" and "13", cases 18-19), matching the
-		// prose-embedded cases 8-9.
+		// A signed bare number is never reported.
 		{"+13", -1, -1},     // 54
 		{"-13", -1, -1},     // 55
 		{"roll -5", -1, -1}, // 56
 		{"-5x2", -1, -1},    // 57
-		// A die marker after a sign's digit operand means the operand is really the count of a dice spec; the bare
-		// number and sign before it are not part of the notation, so the span is the dice spec itself rather than the
-		// arithmetic prefix ("12+3", which New would collapse to "15").
+		// A die marker after a sign's operand makes the operand a count, so the span is the dice spec, not the
+		// arithmetic prefix.
 		{"12+3d6", 3, 6},      // 58
 		{"5+3d6", 2, 5},       // 59
 		{"12+3d6+2x3", 3, 10}, // 60
 		{"d+5d6", 2, 5},       // 61 - after a discarded 'd', like case 15
-		{"3d6+2d6", 0, 5},     // 62 - control: a spec that already has a 'd' ends at the second one, as New does
+		{"3d6+2d6", 0, 5},     // 62 - control: a spec that already has a 'd' ends at the second one, as Parse does
 		{"d6+d6", 0, 2},       // 63 - control: a die marker directly after a sign is dangling, so the sign is trimmed
 		{"+d6", 1, 3},         // 64 - a leading sign before a 'd' spec
-		// Discarding a 'd' that no digit followed must re-examine the character that triggered the discard, so a
-		// second 'd' can start a new candidate. Case 17 ("ddd6") only worked because the third 'd' was seen afresh.
+		// Discarding a 'd' re-examines the character, so a second 'd' can start a new candidate.
 		{"dd6", 1, 3},  // 65
 		{"Dd6", 1, 3},  // 66
 		{"dd", -1, -1}, // 67
-		// The re-examined 'd' inherits the word status of the run it belongs to: the second 'd' of "add" is in a
-		// word just as the first is (case 23), so a trailing bare number stays reportable, while a standalone "dd"
-		// suppresses it just as a standalone "d" (case 10) does.
+		// The re-examined 'd' inherits the word status of its run.
 		{"adds 5", 5, 6}, // 68
 		{"dd 5", -1, -1}, // 69
-		// A bare number with a multiplier is a spec in its own right (Parse makes 10 of "5x2"), so the number is part of
-		// the span rather than being discarded and only the multiplier's operand ("2") reported. Like bare arithmetic
-		// ("5+3", case 45 and TestExtractedSpanIsCanonical), it is reported even when text follows it.
+		// A bare number with a multiplier is a spec in its own right, reported even when text follows it.
 		{"5x2", 0, 3},             // 70
 		{"5X2", 0, 3},             // 71
 		{"5x2+3", 0, 3},           // 72 - the spec ends before the modifier, exactly as Parse stops there
@@ -929,8 +877,7 @@ func TestExtractFirstPosition(t *testing.T) {
 		{"roll 5x2 for me", 5, 8}, // 75
 		{"x2", -1, -1},            // 76 - an orphan multiplier's operand is not a bare number (Parse("x2") is 0)
 		{"5 x2", -1, -1},          // 77 - nor is it after a bare number that is not the final token
-		// Any trailing whitespace after a bare number is trailing whitespace, not just a space, matching the TrimSpace
-		// Parse applies; previously a line ending or tab hid a trailing number (compare cases 36-38).
+		// Any trailing whitespace counts, matching the TrimSpace Parse applies.
 		{"roll 5\n", 5, 6},    // 78
 		{"roll 5\t", 5, 6},    // 79
 		{"5\r\n", 0, 1},       // 80
@@ -947,13 +894,9 @@ func TestExtractFirstPosition(t *testing.T) {
 	}
 }
 
-// TestExtractedSpanIsCanonical pins the reconciliation guarantee between ExtractDicePosition and Parse: Parse consumes
-// the span the extractor returns in full, so there is no trailing operator or interior space that Parse would silently
-// drop, and the span means exactly what Parse makes of it. Before this was reconciled, e.g. "3d6+ 2" yielded the span
-// "3d6+ 2" while Parse("3d6+ 2") parsed only "3d6". For most spans this also makes the span its own canonical spelling,
-// so Format(Parse(span)) == span. The guarantee is not that the span is canonical, though: a span may be shorthand
-// ("3d" is Parse's 3d6) or bare arithmetic ("5+3" is the modifier 8), and those rows list the canonical form
-// explicitly. What must hold for them is that the tail Parse might have dropped ("d", "+3") is in fact consumed.
+// TestExtractedSpanIsCanonical pins that Parse consumes the extracted span in full, so the span means exactly what
+// Parse makes of it. Usually the span is also its own canonical spelling; the shorthand ("3d") and bare arithmetic
+// ("5+3") rows list the canonical form and must show that their tail was consumed rather than dropped.
 func TestExtractedSpanIsCanonical(t *testing.T) {
 	c := check.New(t)
 	r := newRoller(c, nil, false, false)
@@ -977,13 +920,13 @@ func TestExtractedSpanIsCanonical(t *testing.T) {
 		{"roll 5", ""},
 		{"d6", ""},
 		{"2d6+2", ""},
-		// A sign directly before a multiplier is dangling; the span must still be exactly what Parse consumes.
+		// A sign directly before a multiplier is dangling.
 		{"d6+x2", ""},
 		{"d6-x2", ""},
 		{"3d6+x5", ""},
 		{"5+x2", ""},
 		{"d6+X2", ""},
-		// A sign with nothing before it, or a bare number joined by a sign to a dice spec, is left out of the span.
+		// A leading sign, or a bare number joined by a sign to a dice spec, is left out of the span.
 		{"Deal +2d6 fire damage", ""},
 		{"+3d6", ""},
 		{" -4d6-", ""},
@@ -992,12 +935,10 @@ func TestExtractedSpanIsCanonical(t *testing.T) {
 		{"12+3d6+2x3", ""},
 		{"+d6", ""},
 		{"dd6", ""},
-		// Shorthand: a trailing 'd' means d6 (TestExtractFirstPosition case 33 keeps it in the span), so the span is
-		// consumed in full but is not the canonical spelling.
+		// Shorthand: a trailing 'd' means d6.
 		{"3d", "3d6"},
 		{"roll 3d", "3d6"},
-		// Bare arithmetic: a bare number joined by a sign to another is a modifier-only spec that Parse sums, so the
-		// span is consumed in full but formats as the sum.
+		// Bare arithmetic formats as the sum.
 		{"5+3", "8"},
 		{"roll 5+3 things", "8"},
 		{"10-4", "6"},
@@ -1018,7 +959,7 @@ func TestExtractedSpanIsCanonical(t *testing.T) {
 			continue
 		}
 		c.Equal(one.canonical, r.Format(parsed), one.text)
-		// The non-canonical tail was consumed rather than dropped: parsing without it gives different dice.
+		// The tail was consumed: parsing without it gives different dice.
 		c.NotEqual(parsed, r.Parse(span[:len(span)-1]), one.text)
 	}
 }

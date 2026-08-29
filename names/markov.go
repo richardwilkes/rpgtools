@@ -18,16 +18,14 @@ import (
 	"github.com/richardwilkes/toolbox/v2/xrand"
 )
 
-// weightedStep pairs a step (for SimpleNamer, a whole name) with the running cumulative weight through it (the prior
-// steps' weights plus its own), which is the form pickWeighted consumes; the last entry in a slice therefore holds that
-// slice's grand total.
+// weightedStep pairs a step (for SimpleNamer, a whole name) with the cumulative weight through it, the form
+// pickWeighted consumes.
 type weightedStep[S cmp.Ordered] struct {
 	step S
 	last int64
 }
 
-// markovStepper supplies the per-step behavior that distinguishes the Markov namers: how a training name is broken into
-// steps, how the lookup key evolves as steps are taken, and how a step contributes to a generated name.
+// markovStepper supplies the per-step behavior that distinguishes the Markov namers.
 type markovStepper[S cmp.Ordered] interface {
 	// initialKey is the lookup key before any step has been taken.
 	initialKey() string
@@ -41,16 +39,12 @@ type markovStepper[S cmp.Ordered] interface {
 	write(b *strings.Builder, step S)
 }
 
-// markov is the shared core of the Markov-chain namers. S is the unit a name is generated from one step at a time: a
-// rune for MarkovLetterNamer or a vowel/consonant run for MarkovRunNamer. Everything that differs between the two
-// namers lives in the markovStepper; the training and generation logic here is identical for both. The namers embed it
-// by value so that their zero values are usable: a zero markov has no stepper and no training data, and generating from
-// it yields "" rather than a nil pointer dereference, matching the zero SimpleNamer and CompoundNamer.
+// markov is the shared core of the Markov-chain namers, generating a name one step (S) at a time: a rune for
+// MarkovLetterNamer or a vowel/consonant run for MarkovRunNamer. The namers embed it by value so their zero values are
+// usable and generate "".
 //
 // mapping holds every successor of each key. endings holds, for each key, only the successors that lead to a final step
-// soonest (see buildEndings): once a generated name has reached its target length the next step is drawn from endings
-// whenever the key has an entry there, so the name wraps up at the first natural opportunity instead of wandering on
-// until a final step happens to be picked.
+// soonest (see buildEndings); once a generated name reaches its target length the next step is drawn from there.
 type markov[S cmp.Ordered] struct {
 	stepper      markovStepper[S]
 	mapping      map[string][]weightedStep[S]
@@ -108,13 +102,10 @@ func (n *markov[S]) add(name string, count int, mapping map[string]map[S]int, le
 }
 
 // buildEndings returns, for every key from which a final step is reachable, the successors that reach one soonest: the
-// final successors themselves when the key has any, otherwise the successors whose next key is the fewest steps from
-// a final one. The distances come from a breadth-first search run backwards from the keys with a final successor. Every
-// key produced by training can reach a final step, because the remainder of the training name that created it is
-// itself a path to one, so with real data every key gets an entry and a generated name that has reached its target
-// length ends within at most one training name's length of further steps. Only a hand-built table whose graph never
-// reaches a final step is left without entries. It must run after every training name has been added, since a step
-// only becomes final once some name has ended with it.
+// final successors themselves when the key has any, otherwise those whose next key is fewest steps from a final one,
+// found by a breadth-first search run backwards from the keys with a final successor. Every key produced by training
+// can reach a final step (the rest of the training name is such a path), so only a hand-built table can lack entries.
+// It must run after every training name has been added, since a step only becomes final once some name ends with it.
 func (n *markov[S]) buildEndings(mapping map[string]map[S]int) map[string]map[S]int {
 	type edge struct {
 		step S
@@ -129,8 +120,8 @@ func (n *markov[S]) buildEndings(mapping map[string]map[S]int) map[string]map[S]
 		}
 		m[step] = mapping[key][step]
 	}
-	// distance is the fewest steps from a key to emitting a final step; keys with a final successor seed the search at
-	// 1. predecessors maps each key to the non-final edges that lead into it, which the search walks backwards.
+	// distance is the fewest steps from a key to a final step; keys with a final successor seed the search at 1.
+	// predecessors maps each key to the non-final edges leading into it.
 	distance := make(map[string]int, len(mapping))
 	predecessors := make(map[string][]edge)
 	var queue []string
@@ -148,9 +139,8 @@ func (n *markov[S]) buildEndings(mapping map[string]map[S]int) map[string]map[S]
 			predecessors[next] = append(predecessors[next], edge{key: key, step: step})
 		}
 	}
-	// The queue is processed in non-decreasing distance order, so the first time an edge out of a key is examined it
-	// sets that key's true distance, and any later edge whose target sits one step closer is another shortest route.
-	// The resulting table is therefore the same whatever order the maps above were iterated in.
+	// The queue is in non-decreasing distance order, so the first edge examined out of a key sets its true distance and
+	// any later edge at the same distance is another shortest route, whatever order the maps were iterated in.
 	for i := 0; i < len(queue); i++ {
 		key := queue[i]
 		d := distance[key] + 1
@@ -175,19 +165,13 @@ func (n *markov[S]) GenerateName() string {
 
 // GenerateNameWithRandomizer generates a new random name using the specified randomizer.
 func (n *markov[S]) GenerateNameWithRandomizer(rnd xrand.Randomizer) string {
-	// A zero-value namer (one not built by a constructor) has no stepper and no training data, so there is nothing to
-	// generate. Return "" as SimpleNamer and CompoundNamer do rather than dereferencing the nil stepper.
-	if n.stepper == nil {
+	if n.stepper == nil { // zero-value namer
 		return ""
 	}
 	var buffer strings.Builder
 	maximum := selectMax(n.lengths, rnd)
-	// Past 'maximum' the loop keeps going only to end on a natural (final) step, drawing from the endings table so that
-	// it heads for the nearest one: with real training data that is never more than one training name's length away,
-	// so the result stays within twice the longest training name. Training data whose transition graph cycles without a
-	// reachable final step (which no trained table has, but a hand-built one can) would otherwise loop forever, so the
-	// length is also capped there as a safety valve. Letter steps are single runes, so a letter namer never reaches the
-	// cap with real data; a run namer takes whole runs, so in principle a contrived corpus could still be cut off at it.
+	// Past 'maximum' the loop continues only to end on a final step, which the endings table keeps within one training
+	// name's length. The cap is a safety valve for a hand-built table whose graph never reaches a final step.
 	hardCap := 2 * n.maxLength
 	key := n.stepper.initialKey()
 	count := 0
@@ -205,8 +189,7 @@ func (n *markov[S]) GenerateNameWithRandomizer(rnd xrand.Randomizer) string {
 		if !ok {
 			break
 		}
-		// Check the cap before appending rather than after so that a multi-rune step (a whole vowel or consonant run)
-		// can never carry the name past it.
+		// Checked before appending so a multi-rune step cannot carry the name past the cap.
 		if count += n.stepper.length(picked.step); count > hardCap {
 			break
 		}
@@ -222,13 +205,11 @@ func (n *markov[S]) GenerateNameWithRandomizer(rnd xrand.Randomizer) string {
 }
 
 func computeLengths(lengths map[int]int) (result []weightedStep[int], maxLength int) {
-	// Reuse the shared cumulative-weight builder (which accumulates in int64 and in sorted key order, so a seeded
-	// randomizer reproduces the same length selection across process runs) rather than duplicating that arithmetic.
 	result = cumulativeWeights(lengths, func(length int, cumulative int64) weightedStep[int] {
 		return weightedStep[int]{step: length, last: cumulative}
 	})
 	if n := len(result); n != 0 {
-		maxLength = result[n-1].step // keys accumulate in ascending order, so the last entry holds the longest length
+		maxLength = result[n-1].step // sorted ascending
 	}
 	return result, maxLength
 }

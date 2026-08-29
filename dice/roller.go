@@ -31,12 +31,11 @@ func (r *Roller) Config() *Config {
 	if r != nil && r.cfg != nil {
 		return r.cfg.Clone()
 	}
-	return DefaultConfig() // Already a clone
+	return DefaultConfig() // already a clone
 }
 
-// config returns the Config to use for a single operation. For a zero-value or nil Roller this is a fresh copy of the
-// default Config, taken under the global lock, so each exported method fetches it exactly once and passes it down: the
-// whole operation then sees one consistent Config (even if SetDefaultConfig runs concurrently) and pays for one copy.
+// config returns the Config for a single operation. Each exported method fetches it once so the whole operation sees
+// one consistent Config even if SetDefaultConfig runs concurrently.
 func (r *Roller) config() *Config {
 	if r != nil && r.cfg != nil {
 		return r.cfg
@@ -50,12 +49,12 @@ func (r *Roller) Format(dice Dice) string {
 	return cfg.prepare(dice).format(cfg.GURPSFormat)
 }
 
-// Parse a dice string in the form 3d6+1x2 and turns it into a Dice, with each field clamped to the range this Roller's
-// Config permits. Parsing is lenient: surrounding whitespace is ignored, and the first character that cannot continue
-// the specification ends it, so any trailing text is ignored ("3d6 damage" is 3d6) and text with no notation at all is
-// the zero Dice. A bare number is a modifier ("5+3" is the modifier 8). A sign directly before a dice spec, or a bare
-// number joined to one by a sign, is not part of the notation and is dropped ("-3d6" and "12+3d6" are both 3d6), which
-// is the span ExtractDicePosition reports for such text. Use Dice.UnmarshalText to reject malformed text instead.
+// Parse a dice string in the form 3d6+1x2 and turn it into a Dice, with each field clamped to the range this Roller's
+// Config permits. Parsing is lenient: surrounding whitespace is ignored and the first character that cannot continue
+// the specification ends it ("3d6 damage" is 3d6; text with no notation is the zero Dice). A bare number is a modifier
+// ("5+3" is 8). A sign before a dice spec, or a bare number joined to one by a sign, is dropped ("-3d6" and "12+3d6"
+// are both 3d6), matching the span ExtractDicePosition reports. Use Dice.UnmarshalText to reject malformed text
+// instead.
 func (r *Roller) Parse(spec string) Dice {
 	d, _ := parseDice(spec)
 	return r.config().normalize(d)
@@ -76,12 +75,10 @@ func extractValue(in string, inPos, maxValue int) (value, outPos int) {
 		}
 		if value < maxValue {
 			digit := int(ch - '0')
-			if value > (math.MaxInt-digit)/10 {
-				// value*10 + digit would overflow an int, so it necessarily exceeds maxValue (which is itself at most
-				// math.MaxInt). Cap rather than wrap to a garbage value on an absurdly long number.
+			if value > (math.MaxInt-digit)/10 { // value*10+digit would overflow, so it exceeds maxValue
 				value = maxValue
 			} else {
-				value = min(value*10+digit, maxValue) // Cap rather than overflow on an absurdly long number.
+				value = min(value*10+digit, maxValue)
 			}
 		}
 		inPos++
@@ -111,8 +108,7 @@ func (r *Roller) Normalize(dice Dice) Dice {
 }
 
 // ApplyExtraDiceFromModifiers returns the Dice as if the ExtraDiceFromModifiers configuration option had been applied
-// to its components. No more dice are added than the configured MaxCount allows: once the count would reach MaxCount,
-// any modifier that would have converted into further dice is left in the modifier instead.
+// to its components. No dice are added past the configured MaxCount; the unconverted modifier is retained instead.
 func (r *Roller) ApplyExtraDiceFromModifiers(dice Dice) Dice {
 	return r.config().applyExtraDiceFromModifiers(dice)
 }
@@ -159,17 +155,15 @@ func (r *Roller) Minimum(dice Dice) int {
 	return result * dice.Multiplier
 }
 
-// Average returns the average result, rounded down to a whole number. The rounding happens only after the multiplier
-// has been applied, so a fractional average (3.5 for a d6) is not truncated before it is multiplied: 1d6x10 averages
-// 35, not 30.
+// Average returns the average result, rounded down to a whole number only after the multiplier has been applied, so
+// 1d6x10 averages 35, not 30.
 func (r *Roller) Average(dice Dice) int {
 	dice = r.config().prepare(dice)
 	result := dice.Modifier
 	half := 0
 	if dice.Count > 0 && dice.Sides > 0 {
-		// count*(sides+1) is twice the dice's average. Carry its odd half separately so the multiplier is applied
-		// before it is rounded away. Config.Valid bounds count*(sides+1), and both products below are bounded by the
-		// (count*sides+modifier)*multiplier total it also checks, since (sides+1)/2 <= sides for any sides >= 1.
+		// count*(sides+1) is twice the average. Carry its odd half separately so the multiplier is applied before it is
+		// rounded away. Config.Valid bounds every product here.
 		twice := dice.Count * (dice.Sides + 1)
 		result += twice / 2
 		half = twice & 1
@@ -185,16 +179,14 @@ func (r *Roller) Maximum(dice Dice) int {
 	return result * dice.Multiplier
 }
 
-// PoolProbability return the probability that at least one die will be equal to or greater than the target value. The
-// Dice are prepared the same way Roll prepares them, so with ExtraDiceFromModifiers set the probability is for the pool
-// that would actually be rolled (1d6+8 is a pool of three dice, not one).
+// PoolProbability returns the probability that at least one die will be equal to or greater than the target value. The
+// Dice are prepared as Roll prepares them, so with ExtraDiceFromModifiers set the pool is the one actually rolled.
 func (r *Roller) PoolProbability(dice Dice, target int) float64 {
 	dice = r.config().prepare(dice)
 	if dice.Count < 1 || dice.Sides < 1 || dice.Sides < target {
 		return 0
 	}
 	if target < 1 {
-		// Every die rolls at least 1, so a non-positive target is always met.
 		return 1
 	}
 	return 1 - math.Pow(1-float64(1+dice.Sides-target)/float64(dice.Sides), float64(dice.Count))

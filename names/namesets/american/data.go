@@ -24,10 +24,7 @@ import (
 //go:embed female.txt
 var female string
 
-// The embedded corpora are large, so each is parsed at most once and the parsed map is cached. Callers receive a fresh
-// clone of that map so they retain the prior contract of owning a map they may freely mutate without affecting other
-// callers or the cache. That clone is not free: it copies tens of thousands of entries on every call (several
-// megabytes and a fraction of a millisecond), which each accessor's doc warns about.
+// Each corpus is parsed once and cached; the accessors return a clone so callers own a map they may mutate.
 var (
 	femaleOnce = sync.OnceValue(func() map[string]int {
 		return namesets.MustLoadFromReader(strings.NewReader(female))

@@ -44,8 +44,7 @@ func TestLoadFromReader(t *testing.T) {
 
 func TestLoadFromReaderSuppressesNonPositiveCounts(t *testing.T) {
 	c := check.New(t)
-	// The namer constructors document that "any count less than 1 effectively removes the name from the set", so the
-	// loader must honor an explicit non-positive count rather than silently treating it as 1.
+	// A non-positive count must suppress the name, matching the namer constructors.
 	m, err := LoadFromReader(strings.NewReader(strings.Join([]string{
 		"Keep, 3",      // positive count is retained
 		"Zero, 0",      // explicit 0 suppresses the name
@@ -69,9 +68,8 @@ func TestLoadFromReaderSuppressesNonPositiveCounts(t *testing.T) {
 
 func TestLoadFromReaderZeroCountAccumulates(t *testing.T) {
 	c := check.New(t)
-	// Counts accumulate across lines and only the accumulated total is compared against 1, so an explicit 0 adds
-	// nothing: it cannot cancel an earlier positive count, and a later positive count revives a name that a 0 line
-	// alone would have suppressed. Only a negative count can offset earlier lines.
+	// Only the accumulated total is compared against 1, so an explicit 0 adds nothing and only a negative count offsets
+	// earlier lines.
 	m, err := LoadFromReader(strings.NewReader(strings.Join([]string{
 		"Bob, 5",
 		"Bob, 0", // adds nothing, so Bob stays at 5
@@ -90,8 +88,7 @@ func TestLoadFromReaderZeroCountAccumulates(t *testing.T) {
 
 func TestLoadFromReaderNameWithComma(t *testing.T) {
 	c := check.New(t)
-	// Only the final comma separates the name from the count, so a name that itself contains commas is kept intact
-	// rather than being truncated at its first comma.
+	// Only the final comma separates the name from the count.
 	m, err := LoadFromReader(strings.NewReader(strings.Join([]string{
 		"Smith, Jr., 5",      // name "Smith, Jr." with count 5
 		"de la Cruz, Sr., 3", // name with two internal commas and a count
@@ -106,9 +103,8 @@ func TestLoadFromReaderNameWithComma(t *testing.T) {
 
 func TestLoadFromReaderNonNumericSuffixIsPartOfName(t *testing.T) {
 	c := check.New(t)
-	// When the text after the final comma is not a number, that comma belongs to the name, so the whole line is kept
-	// verbatim rather than truncated at the comma (the bug this guards against silently dropped the suffix). The
-	// no-count and explicit-count forms must agree on the resulting name, so the first and last lines accumulate.
+	// A non-numeric suffix after the final comma is part of the name, and the no-count and explicit-count forms of the
+	// same name accumulate.
 	m, err := LoadFromReader(strings.NewReader(strings.Join([]string{
 		"Smith, Jr.",      // honorific suffix, no count
 		"de la Cruz, Sr.", // two internal commas, no count
@@ -124,9 +120,7 @@ func TestLoadFromReaderNonNumericSuffixIsPartOfName(t *testing.T) {
 
 func TestLoadFromReaderDropsTrailingComma(t *testing.T) {
 	c := check.New(t)
-	// A line that ends with a comma and no count is a dangling trailing comma, not part of the name, so the comma is
-	// dropped rather than kept the way a comma with non-numeric text after it would be. An internal comma is still
-	// preserved, so "Smith, Jr.," loads as "Smith, Jr.".
+	// A dangling trailing comma is dropped while an internal comma is kept.
 	m, err := LoadFromReader(strings.NewReader(strings.Join([]string{
 		"Bob,",        // trailing comma, no count
 		"Carol, ",     // trailing comma followed only by spaces
@@ -141,9 +135,8 @@ func TestLoadFromReaderDropsTrailingComma(t *testing.T) {
 
 func TestLoadFromReaderLongLineStopsScan(t *testing.T) {
 	c := check.New(t)
-	// Lines are read with bufio.Scanner's default 64KB buffer. A longer line is neither split nor truncated: the scan
-	// stops at it, the names collected before it are returned, and a non-nil error reports the overflow. Everything
-	// after the long line is therefore never seen, so Bob is dropped along with the oversized entry.
+	// A line longer than the 64KB buffer stops the scan: the names collected before it are returned with an error, and
+	// Bob is never seen.
 	m, err := LoadFromReader(strings.NewReader("Alice,5\n" + strings.Repeat("x", 70000) + ",3\nBob,7\n"))
 	c.HasError(err)
 	c.True(errors.Is(err, bufio.ErrTooLong), "expected bufio.ErrTooLong, got: %v", err)
@@ -152,8 +145,7 @@ func TestLoadFromReaderLongLineStopsScan(t *testing.T) {
 
 func TestLoadFromReaderLargeCountSaturates(t *testing.T) {
 	c := check.New(t)
-	// A count beyond the int32 range saturates to math.MaxInt32 (the weight ceiling the namer constructors apply)
-	// rather than being preserved at full width or, on a narrow int, wrapping to a small or negative value.
+	// A count beyond the int32 range saturates at math.MaxInt32.
 	m, err := LoadFromReader(strings.NewReader("Big, 3000000000"))
 	c.NoError(err)
 	c.Equal(math.MaxInt32, m["Big"])
@@ -161,9 +153,7 @@ func TestLoadFromReaderLargeCountSaturates(t *testing.T) {
 
 func TestLoadFromReaderLargeCountsSaturateAcrossLines(t *testing.T) {
 	c := check.New(t)
-	// Two counts at the int64 maximum for the same name must saturate at math.MaxInt32, not wrap a platform int
-	// negative. A wrapped negative total would trip the "< 1" suppression filter and delete the name entirely, so the
-	// name must both survive and hold the saturated weight.
+	// Two counts at the int64 maximum must saturate rather than wrap negative and trip the suppression filter.
 	m, err := LoadFromReader(strings.NewReader("Big, 9223372036854775807\nBig, 9223372036854775807"))
 	c.NoError(err)
 	_, ok := m["Big"]

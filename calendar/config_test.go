@@ -30,8 +30,7 @@ func TestValidPrefabs(t *testing.T) {
 }
 
 // TestConfigValidRejectsEachRule pins every rule Valid enforces, one violation at a time, starting from the Gregorian
-// Config so that only the mutated field is at fault. Each error must name the rule that fired so a violation cannot be
-// caught by an earlier, unrelated check by accident.
+// Config. Each error must name the rule that fired.
 func TestConfigValidRejectsEachRule(t *testing.T) {
 	c := check.New(t)
 	const (
@@ -156,9 +155,7 @@ func TestConfigValidRejectsEachRule(t *testing.T) {
 		c.HasError(err, tc.name)
 	}
 
-	// The boundaries each rule permits are accepted: the last week day as day zero, season boundaries on the leap day
-	// (the day is a valid day-of-month across all years, even though it exists only in leap years), and a single shared
-	// era label.
+	// The boundaries each rule permits are accepted.
 	cfg := calendar.Gregorian().Config()
 	cfg.DayZeroWeekDay = 6
 	cfg.Seasons[0].EndDay = 29
@@ -167,10 +164,8 @@ func TestConfigValidRejectsEachRule(t *testing.T) {
 	c.NoError(cfg.Valid())
 }
 
-// TestEraCaseIsSignificantToNeither pins the fix for eras that differed only in letter case. ParseDate matches an era
-// suffix without regard to case, so with eras "ad" and "AD" a date formatted in the current era ("1/5/2017 ad") parsed
-// back as year -2017 with no error. Such a pair is now rejected up front; a pair that differs beyond case, and a pair
-// that is identical, both remain usable and round-trip through their own text in every case they are written in.
+// TestEraCaseIsSignificantToNeither pins that eras differing only in case are rejected, while pairs that differ beyond
+// case or are identical round-trip through their own text in any case.
 func TestEraCaseIsSignificantToNeither(t *testing.T) {
 	c := check.New(t)
 	cfg := calendar.Gregorian().Config()
@@ -197,21 +192,15 @@ func TestEraCaseIsSignificantToNeither(t *testing.T) {
 	}
 }
 
-// TestConfigBoundsNamesLength pins the budget on the total length of a Config's names, which exists to keep the
-// ParseDate patterns (built from the month and era names as literals) inside the size a regular expression may have.
-// A Config that spends the whole budget is accepted, builds, and parses its own text; one character more, wherever it
-// is spent, is rejected. New once reached regexp.MustCompile with an unbounded name and panicked with "expression too
-// large" -- reachable from any YAML- or JSON-loaded Config -- so the original 16 MB name must now be turned away by
-// Valid, quickly and without a panic.
+// TestConfigBoundsNamesLength pins the budget on the total length of a Config's names: a Config that spends the whole
+// budget is accepted, builds and parses its own text; one character more, wherever spent, is rejected; and a name too
+// large for a regular expression is rejected by Valid rather than panicking in MustCompile.
 func TestConfigBoundsNamesLength(t *testing.T) {
 	c := check.New(t)
-	const maxNames = 65536 // the documented cap on the total length of a Config's names, in characters
+	const maxNames = 65536 // the documented cap, in characters
 	const budgeted = "the names of the week days, months, seasons and eras may not total more than"
-	// The names below total exactly the cap: 4 + 3 + 2 + 1 characters spread over the other kinds so each is shown to
-	// count, a five-character second month, and the rest on the first month's name, which the patterns embed in full.
-	// The dates parsed lie in the short month: the patterns must work with the huge name among their alternatives,
-	// but matching text that is itself tens of thousands of identical characters is quadratic in Go's regexp engine,
-	// which is a property of the engine rather than of this budget.
+	// The names total exactly the cap, spread over every kind so each is shown to count. The parsed dates lie in the
+	// short month: matching tens of thousands of identical characters is quadratic in Go's regexp engine.
 	build := func(weekDay, month, season, era, previousEra string) *calendar.Config {
 		return &calendar.Config{
 			WeekDays:    []string{weekDay},
@@ -273,9 +262,7 @@ func TestConfigBoundsNamesLength(t *testing.T) {
 
 func TestMinDaysPerYearMatchesMonthSum(t *testing.T) {
 	c := check.New(t)
-	// MinDaysPerYear is summed once when the Calendar is built and cached (it is a pure function of the immutable
-	// Config). For every construction path -- the built-ins and New -- the cached value must equal the live sum of
-	// every month's Days, so the cache can never drift from the Config it was built from.
+	// The cached MinDaysPerYear must equal the live sum of every month's Days for every construction path.
 	assertSum := func(cal *calendar.Calendar) {
 		want := 0
 		for _, m := range cal.Config().Months {
@@ -313,19 +300,14 @@ func TestConfigBoundsTotalDaysPerYear(t *testing.T) {
 		}
 	}
 
-	// Regression: Config.Valid() previously placed no upper bound on the per-month Days or their sum, so a config whose
-	// months summed past math.MaxInt wrapped MinDaysPerYear() negative and silently corrupted every date computation --
-	// e.g. NewDate(1,1,5) returned Days=-8 with Year()==3 on a Valid() config. Two math.MaxInt-day months must now be
-	// rejected outright, so no such Calendar can be built.
+	// Months summing past math.MaxInt must be rejected outright rather than wrapping MinDaysPerYear negative.
 	huge := base(calendar.Month{Name: "A", Days: math.MaxInt}, calendar.Month{Name: "B", Days: math.MaxInt})
 	c.HasError(huge.Valid())
 	cal, err := calendar.New(huge)
 	c.HasError(err)
 	c.True(cal == nil)
 
-	// The longest year is capped at 2^30 days. A single month exactly at the cap is accepted and MinDaysPerYear reports
-	// it faithfully, and even year math.MaxInt32 on such a calendar is representable: its last day stays finite and
-	// resolves rather than wrapping to a negative day count or panicking in resolve().
+	// A single month at the 2^30 cap is accepted, and even year math.MaxInt32 on it resolves.
 	atCap := base(calendar.Month{Name: "A", Days: 1 << 30})
 	c.NoError(atCap.Valid())
 	cal, err = calendar.New(atCap)
@@ -338,7 +320,7 @@ func TestConfigBoundsTotalDaysPerYear(t *testing.T) {
 	c.Equal(math.MaxInt32, d.Year())
 	c.Equal(d, cal.NewDateByDays(math.MaxInt64))
 
-	// One day past the cap (spread across two months) is rejected, proving the bound is inclusive and not off by one.
+	// One day past the cap is rejected.
 	overByOne := base(calendar.Month{Name: "A", Days: 1 << 30}, calendar.Month{Name: "B", Days: 1})
 	c.HasError(overByOne.Valid())
 
@@ -359,8 +341,8 @@ func TestConfigBoundsTotalDaysPerYear(t *testing.T) {
 	c.NoError(ok.Valid())
 }
 
-// TestConfigBoundsListLengths pins the caps on the number of week days, months and seasons: each list is accepted at
-// its cap and rejected one past it, independently of the others, and a calendar at every cap at once is fully usable.
+// TestConfigBoundsListLengths pins the caps on the number of week days, months and seasons: each is accepted at its cap
+// and rejected one past it, and a calendar at every cap is usable.
 func TestConfigBoundsListLengths(t *testing.T) {
 	c := check.New(t)
 	names := func(prefix string, n int) []string {
@@ -403,8 +385,7 @@ func TestConfigBoundsListLengths(t *testing.T) {
 
 func TestConfigOmitsEmptySeasons(t *testing.T) {
 	c := check.New(t)
-	// Seasons is optional, like LeapYear and the eras, and must be omitted from both encodings when empty rather than
-	// appearing as an empty list in YAML while being absent from JSON.
+	// Seasons must be omitted from both encodings when empty.
 	cfg := &calendar.Config{
 		WeekDays: []string{"A", "B"},
 		Months:   []calendar.Month{{Name: "M", Days: 10}},

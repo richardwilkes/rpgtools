@@ -71,12 +71,11 @@ func TestLeapYearSince(t *testing.T) {
 func TestLeapYearSinceMatchesIs(t *testing.T) {
 	c := check.New(t)
 	cfg := Gregorian().Config()
-	// Since() must agree with a brute-force count over Is() for every leap-rule shape, across both positive and
-	// negative years. The Except-set/Unless-unset shape is the regression: Since() previously overcounted every
-	// negative year by one because it unconditionally treated year -1 (magnitude 0) as a leap year.
+	// leapYearsSince must agree with a brute-force count over IsLeapYear for every leap-rule shape, across positive and
+	// negative years.
 	for _, ly := range []*LeapYear{
-		{Month: 2, Every: 4, Except: 100, Unless: 400}, // Gregorian-style: all three tiers
-		{Month: 1, Every: 4, Except: 8},                // Except set, Unless unset (the bug)
+		{Month: 2, Every: 4, Except: 100, Unless: 400}, // all three tiers
+		{Month: 1, Every: 4, Except: 8},                // Except set, Unless unset
 		{Month: 1, Every: 2},                           // Every only
 		{Month: 1, Every: 3, Except: 9, Unless: 27},    // all tiers, different moduli
 		{Month: 1, Every: 5, Except: 25},               // another Except-only shape
@@ -93,8 +92,7 @@ func TestLeapYearSinceMatchesIs(t *testing.T) {
 	}
 }
 
-// bruteSince independently counts the leap years strictly between year 1 and the given year using only Is(), serving as
-// an oracle for leapYearsSince(). There is no year 0, so the negative side walks -1, -2, ... year+1.
+// bruteSince counts the leap years strictly between year 1 and the given year using only IsLeapYear.
 func bruteSince(cal *Calendar, year int) int64 {
 	var count int64
 	switch {

@@ -59,10 +59,8 @@ func TestNewDate(t *testing.T) {
 	c.HasError(err)
 }
 
-// TestNewDateAcceptsEveryInt32Year verifies that every year IsValidYear accepts is representable in full on the
-// calendars with the longest years Config.Valid allows, and pins where their extreme days fall: maxDaysPerYear is
-// chosen so that even these stay within 2^61 of 1/1/1. NewDate once rejected years that ran past a fixed day limit on
-// such calendars, so a valid int32 year was not always a valid date.
+// TestNewDateAcceptsEveryInt32Year pins that every year IsValidYear accepts is representable on the calendars with the
+// longest years Valid allows, and where their extreme days fall.
 func TestNewDateAcceptsEveryInt32Year(t *testing.T) {
 	c := check.New(t)
 	for _, tc := range []struct {
@@ -84,11 +82,10 @@ func TestNewDateAcceptsEveryInt32Year(t *testing.T) {
 		c.Equal(math.MaxInt32, last.Year(), "leap=%t", tc.leap)
 		c.Equal(cal.Days(math.MaxInt32), last.DayInMonth(), "leap=%t", tc.leap)
 		c.Equal(last, cal.NewDateByDays(math.MaxInt64), "leap=%t", tc.leap)
-		// The day past either end does not exist: stepping there saturates.
+		// Stepping past either end saturates.
 		c.Equal(first, first.Add(-1), "leap=%t", tc.leap)
 		c.Equal(last, last.Add(1), "leap=%t", tc.leap)
 	}
-	// Ordinary calendars are nowhere near these extremes; the int32 limits remain accepted.
 	for _, ordinary := range []*calendar.Calendar{calendar.Gregorian(), calendar.PathfinderAbsalomReckoning()} {
 		_, err := ordinary.NewDate(1, 1, math.MaxInt32)
 		c.NoError(err)
@@ -121,11 +118,8 @@ func TestYear(t *testing.T) {
 	}
 }
 
-// TestYearLargeDays guards against a regression to the old O(date.Days) convergence loop in Year(), which made a Date
-// carrying a very large (but legal) Days value effectively hang. The binary search returns in O(log) steps, so these
-// calls complete near-instantly; under the old loop the 1<<62 cases alone would have run for trillions of iterations.
-// Each result is cross-checked against the calendar's own first-day-of-year boundaries: the reported year must start on
-// or before the date and the following year must start strictly after it.
+// TestYearLargeDays guards against a regression to an O(Days) search in Year; each result is checked against the
+// calendar's own first-of-year boundaries.
 func TestYearLargeDays(t *testing.T) {
 	c := check.New(t)
 	cal := calendar.Gregorian()
@@ -134,22 +128,16 @@ func TestYearLargeDays(t *testing.T) {
 		c.True(year != 0, "year is never 0 (days=%d)", days)
 		c.True(cal.MustNewDate(1, 1, year).Days() <= days, "1/1/%d must start on or before days=%d", year, days)
 		next := year + 1
-		if next == 0 { // skip the nonexistent year 0 when stepping forward from year -1
+		if next == 0 { // there is no year 0
 			next = 1
 		}
 		c.True(days < cal.MustNewDate(1, 1, next).Days(), "1/1/%d must start after days=%d", next, days)
 	}
 }
 
-// TestYearSaturatesAtInt32Bounds guards the overflow-safe search bounds in Year() and the confinement of every Date to
-// the years IsValidYear accepts. A Date.Days value within a year of the int64 limits once drove the bound arithmetic
-// (and the yearToDaysWith probe at that bound) to overflow, so Year() returned a wildly wrong, even sign-flipped,
-// result. Date.Add (and so NewDateByDays) now saturates at the last day of year math.MaxInt32 and the first day of
-// year math.MinInt32, far below the int64 limits even on a calendar whose year is a single day, and the search bounds
-// are kept as tight as correctness allows, so the search never probes a year whose day count overflows and never
-// settles on a year outside the int32 range. These cases use a minimal two-day, no-leap calendar (minDays == 2): year y
-// then spans days (y-1)*2 .. y*2-1 for y > 0 and y*2 .. (y+1)*2-1 for y < 0, which pins the expected day count at each
-// extreme.
+// TestYearSaturatesAtInt32Bounds pins that NewDateByDays saturates at the first day of year math.MinInt32 and the last
+// day of year math.MaxInt32, and that Year never settles outside the int32 range. On this two-day, no-leap calendar,
+// year y spans days (y-1)*2 .. y*2-1 for y > 0 and y*2 .. (y+1)*2-1 for y < 0.
 func TestYearSaturatesAtInt32Bounds(t *testing.T) {
 	c := check.New(t)
 	cal, err := calendar.New(&calendar.Config{
@@ -165,7 +153,7 @@ func TestYearSaturatesAtInt32Bounds(t *testing.T) {
 	c.Equal(int64(math.MinInt32)*2, first.Days())
 	c.Equal(math.MinInt32, first.Year())
 	c.Equal(first, cal.MustNewDate(1, 1, math.MinInt32))
-	// Year must stay non-decreasing in Days right up to the limits, where the off-by-one used to appear.
+	// Year must stay non-decreasing in Days right up to the limits.
 	for _, base := range []int64{last.Days() - 5, first.Days()} {
 		for off := int64(0); off <= 5; off++ {
 			earlier := cal.NewDateByDays(base + off).Year()
@@ -176,12 +164,8 @@ func TestYearSaturatesAtInt32Bounds(t *testing.T) {
 	}
 }
 
-// TestYearNearInt32Boundary guards against the leap-counting year search overshooting for valid years near the int32
-// limit. Date.Year's binary search upper bound (date.days/minDays+1) runs past math.MaxInt32 for a date whose year sits
-// near the top of the valid range, so the search probes years just beyond the limit. The internal leap math must stay
-// correct for those probe years or the search loses monotonicity and settles past the limit; the regression resolved
-// Gregorian 1/1/MaxInt32 to year 2148910399 / month 11 instead of MaxInt32 / month 1. Exercise both int32 extremes on
-// calendars that carry a leap rule (a no-leap calendar never hits the leap math, so it is unaffected).
+// TestYearNearInt32Boundary pins that Year resolves correctly near the int32 limits on calendars with a leap rule,
+// where its search probes years past the limit and needs their true leap status.
 func TestYearNearInt32Boundary(t *testing.T) {
 	c := check.New(t)
 	for _, cal := range []*calendar.Calendar{calendar.Gregorian(), calendar.PathfinderAbsalomReckoning()} {
@@ -193,7 +177,6 @@ func TestYearNearInt32Boundary(t *testing.T) {
 			c.Equal(year, first.Year(), "Year() of 1/1/%d", year)
 			c.Equal(1, first.Month(), "Month() of 1/1/%d", year)
 			c.Equal(1, first.DayInMonth(), "DayInMonth() of 1/1/%d", year)
-			// A later day in the same year must resolve back to the same year and a day count 14 days on.
 			mid := cal.MustNewDate(1, 15, year)
 			c.Equal(year, mid.Year(), "Year() of 1/15/%d", year)
 			c.Equal(first.Days()+14, mid.Days(), "Days() of 1/15/%d", year)
@@ -305,42 +288,34 @@ func TestFormat(t *testing.T) {
 	c.Equal("Friday, September 22, 1 BC", d.Format("%W, %M %D, %y"))
 }
 
-// TestFormatRepeatedDirectivesConsistent verifies that resolving the date once for the whole layout (instead of once
-// per directive) does not let one directive's transformation leak into another. In particular %y flips the sign of a
-// negative year for a distinct-era display, which must not disturb the signed year a later %z or %Y reads from the same
-// resolved value, and a directive that appears several times must yield the same value each time.
+// TestFormatRepeatedDirectivesConsistent pins that resolving the date once per layout does not let %y's sign flip leak
+// into a later %z or %Y, and that a repeated directive yields the same value each time.
 func TestFormatRepeatedDirectivesConsistent(t *testing.T) {
 	c := check.New(t)
-	cal := calendar.Gregorian() // distinct eras: AD / BC
+	cal := calendar.Gregorian()
 
-	d := cal.MustNewDate(9, 22, -1) // year -1
-	// %z is the raw signed year; %y and %Y render the previous era as "1 BC". Each %z must still report -1 even though
-	// it follows a %y that negates its own copy of the year for display.
+	d := cal.MustNewDate(9, 22, -1)
 	c.Equal("-1|1 BC|-1|1 BC|-1", d.Format("%z|%y|%z|%Y|%z"))
-	// Month and day directives repeated across the layout must each resolve to the same value.
 	c.Equal("September 22 September 22 9 22", d.Format("%M %D %M %D %N %D"))
 
-	d = cal.MustNewDate(9, 22, 2017) // positive year keeps its sign through %y
+	d = cal.MustNewDate(9, 22, 2017)
 	c.Equal("2017|2017 AD|2017", d.Format("%z|%y|%z"))
 }
 
-// TestMediumFormatRoundTripsThroughParse verifies the abbreviated month name that %m emits is exactly the abbreviation
-// monthFromText accepts when parsing, so MediumFormat output parses back to the same date for every month. Both the
-// emit and parse sides are driven by abbreviatedNameLength, so this round-trip holds by construction; the test guards
-// against the two widths drifting apart again.
+// TestMediumFormatRoundTripsThroughParse pins that the abbreviation %m emits is the one monthFromText accepts.
 func TestMediumFormatRoundTripsThroughParse(t *testing.T) {
 	c := check.New(t)
 	cal := calendar.Gregorian()
 	for month := 1; month <= 12; month++ {
 		want := cal.MustNewDate(month, 15, 2017)
-		formatted := want.Format(calendar.MediumFormat) // uses %m, the abbreviated month name
+		formatted := want.Format(calendar.MediumFormat)
 		got, err := cal.ParseDate(formatted)
 		c.NoError(err, "month %d formatted as %q", month, formatted)
 		c.Equal(want, got, "month %d round-trip via %q", month, formatted)
 	}
 }
 
-// Era labels that Valid accepts but that a single alphabetic word cannot match, used by the parse tests below.
+// Era labels that Valid accepts but a single alphabetic word cannot match.
 const (
 	dottedEra     = "A.D."
 	dottedPrevEra = "B.C."
@@ -348,9 +323,8 @@ const (
 	wordyPrevEra  = "Age of Dark"
 )
 
-// maximalCalendar builds a calendar with a single month holding the most days Config.Valid accepts, with or without a
-// leap rule (every second year, the densest allowed). Its years are the longest possible, so its first day of year
-// math.MinInt32 and last day of year math.MaxInt32 are the farthest any Date can lie from 1/1/1.
+// maximalCalendar builds a calendar with a single month holding the most days Valid accepts, with or without the
+// densest allowed leap rule, so its extreme days are the farthest any Date can lie from 1/1/1.
 func maximalCalendar(c check.Checker, leap bool) *calendar.Calendar {
 	cfg := &calendar.Config{
 		WeekDays: []string{"A"},
@@ -381,9 +355,7 @@ func eraTestCalendar(era, previousEra string) (*calendar.Calendar, error) {
 	})
 }
 
-// TestEraDisplayModel pins the single era model (eraForYear) that %z, %Y, %y and Date.Era all build on, across the
-// three era configurations: distinct eras (the label carries the sign), a single shared label (the sign stays on the
-// number), and no eras at all. The Gregorian-only TestFormat does not cover the shared-label or empty configurations.
+// TestEraDisplayModel pins eraForYear, which %z, %Y, %y and Date.Era build on, across distinct, shared and empty eras.
 func TestEraDisplayModel(t *testing.T) {
 	c := check.New(t)
 	for _, tc := range []struct { //nolint:govet // Not concerned with pointer bytes in tests
@@ -391,14 +363,13 @@ func TestEraDisplayModel(t *testing.T) {
 		year                         int
 		wantZ, wantY, wanty, wantEra string
 	}{
-		// Distinct eras: %Y is terse (no label on a non-negative year), %y always labels, and a negative year shows its
-		// magnitude beside the previous-era label.
+		// Distinct eras: the label carries the sign.
 		{"AD", "BC", 2017, "2017", "2017", "2017 AD", "AD"},
 		{"AD", "BC", -5, "-5", "5 BC", "5 BC", "BC"},
-		// A single shared era label: %Y and %y agree, and the sign stays on the number rather than the label.
+		// A shared era label: the sign stays on the number.
 		{"AR", "AR", 2017, "2017", "2017 AR", "2017 AR", "AR"},
 		{"AR", "AR", -5, "-5", "-5 AR", "-5 AR", "AR"},
-		// No eras: nothing but the signed year, whichever directive is used.
+		// No eras.
 		{"", "", 2017, "2017", "2017", "2017", ""},
 		{"", "", -5, "-5", "-5", "-5", ""},
 	} {
@@ -412,13 +383,11 @@ func TestEraDisplayModel(t *testing.T) {
 	}
 }
 
-// TestEraRoundTripsThroughParse verifies eraForYear and resolveEraSuffix are exact inverses: a date rendered with the
-// era-bearing %y directive parses back to the same date for every era configuration and sign, so the format and parse
-// sides of the era model cannot drift apart.
+// TestEraRoundTripsThroughParse pins that eraForYear and resolveEraSuffix are exact inverses for every era
+// configuration and sign.
 func TestEraRoundTripsThroughParse(t *testing.T) {
 	c := check.New(t)
-	// The last two pairs carry punctuation and spaces, which Valid permits and which the parse patterns must therefore
-	// match in full rather than as a generic single word.
+	// The last two pairs carry punctuation and spaces, which the patterns must match in full.
 	for _, eras := range [][2]string{{"AD", "BC"}, {"AR", "AR"}, {"", ""}, {dottedEra, dottedPrevEra}, {wordyEra, wordyPrevEra}} {
 		cal, err := eraTestCalendar(eras[0], eras[1])
 		c.NoError(err)
@@ -439,8 +408,7 @@ func TestFormatZeroPadded(t *testing.T) {
 	c.Equal("01/01", cal.MustNewDate(1, 1, 2017).Format("%n/%d"))
 	c.Equal("09/22", cal.MustNewDate(9, 22, 2017).Format("%n/%d"))
 	c.Equal("02/29", cal.MustNewDate(2, 29, 2016).Format("%n/%d"))
-	// December is the last month; %d used to index past the end of the months
-	// slice and panic.
+	// %d in the last month once indexed past the end of the months slice.
 	c.Equal("12/05", cal.MustNewDate(12, 5, 2017).Format("%n/%d"))
 	c.Equal("12/31", cal.MustNewDate(12, 31, 2017).Format("%n/%d"))
 }
@@ -448,8 +416,7 @@ func TestFormatZeroPadded(t *testing.T) {
 func TestFormatDayWidthConsistent(t *testing.T) {
 	c := check.New(t)
 
-	// A calendar whose months have very different lengths. The zero-padded day (%d) width must be consistent across
-	// every month, sized to the calendar's longest month rather than the month being formatted.
+	// The zero-padded day width must be sized to the calendar's longest month, not the month being formatted.
 	cal, err := calendar.New(&calendar.Config{
 		WeekDays:       []string{"A", "B", "C"},
 		DayZeroWeekDay: 0,
@@ -457,13 +424,11 @@ func TestFormatDayWidthConsistent(t *testing.T) {
 		Seasons:        []calendar.Season{{Name: "All", StartMonth: 1, StartDay: 1, EndMonth: 2, EndDay: 40}},
 	})
 	c.NoError(err)
-	// Day 3 of the short month previously rendered as "3" (width 1) while the long month rendered "03" (width 2); both
-	// must now be "03".
 	c.Equal("03", cal.MustNewDate(1, 3, 1).Format("%d"))
 	c.Equal("03", cal.MustNewDate(2, 3, 1).Format("%d"))
 	c.Equal("40", cal.MustNewDate(2, 40, 1).Format("%d"))
 
-	// The leap month's extra day is accounted for, so the width is also consistent between leap and non-leap years.
+	// The leap day counts, so the width is also consistent between leap and non-leap years.
 	var leapCal *calendar.Calendar
 	leapCal, err = calendar.New(&calendar.Config{
 		WeekDays:       []string{"A", "B"},
@@ -490,7 +455,7 @@ func TestTextMultiByteWeekDayNames(t *testing.T) {
 	c.NoError(cal.Text(2017, &buf))
 	out := buf.String()
 	c.True(utf8.ValidString(out), "calendar text must remain valid UTF-8")
-	// The week day legend abbreviates each name to its first rune, not its first byte.
+	// Abbreviated to the first rune, not the first byte.
 	c.True(strings.Contains(out, "(É)"), "expected first-rune abbreviation '(É)' in:\n%s", out)
 	c.True(strings.Contains(out, "(三)"), "expected first-rune abbreviation '(三)' in:\n%s", out)
 
@@ -502,7 +467,7 @@ func TestTextMultiByteWeekDayNames(t *testing.T) {
 func TestTextEmptyWeekDayNameDoesNotPanic(t *testing.T) {
 	c := check.New(t)
 	cfg := calendar.Gregorian().Config()
-	// An empty week day name previously caused weekday[:1] to panic.
+	// An empty week day name once caused weekday[:1] to panic; Valid rejects it.
 	cfg.WeekDays = []string{"", "B", "C", "D", "E", "F", "G"}
 	_, err := calendar.New(cfg)
 	c.HasError(err)
@@ -551,16 +516,13 @@ func TestParseDate(t *testing.T) {
 	c.NoError(err)
 	c.Equal(targetDate, date)
 
-	// A negative year combined with a previous-era suffix is contradictory and must not double-negate back into
-	// the current era.
+	// A negative year with a previous-era suffix must not double-negate back into the current era.
 	_, err = cal.ParseDate("9/22/-2017 BC")
 	c.HasError(err)
 	_, err = cal.ParseDate("September 22, -2017 BC")
 	c.HasError(err)
 
-	// A negative year combined with the current-era suffix is contradictory in the same way: the minus sign places
-	// the year in the previous era while the suffix names the current era. Reject it, symmetrically with the
-	// previous-era case above. A non-negative year with the current-era suffix remains valid.
+	// A negative year with the current-era suffix is likewise contradictory; a non-negative year with it is valid.
 	_, err = cal.ParseDate("9/22/-5 AD")
 	c.HasError(err)
 	_, err = cal.ParseDate("September 22, -5 AD")
@@ -570,10 +532,8 @@ func TestParseDate(t *testing.T) {
 	c.Equal(cal.MustNewDate(9, 22, 2017), date)
 }
 
-// TestParseDateEraNamesBeyondSingleWord guards the era suffix against being matched as a generic alphabetic word. With
-// eras "A.D." and "B.C." the previous-era date 2/15/-5 renders as "2/15/5 B.C.", and a word-only pattern captured just
-// the "B", ignored it as unrecognized, and returned year +5 with no error. The patterns are now built from the
-// calendar's own era names, so any label Valid accepts round-trips with its sign intact.
+// TestParseDateEraNamesBeyondSingleWord pins that an era label with punctuation or spaces, which a single-word pattern
+// cannot match, round-trips with its sign intact.
 func TestParseDateEraNamesBeyondSingleWord(t *testing.T) {
 	c := check.New(t)
 	for _, tc := range []struct {
@@ -590,12 +550,11 @@ func TestParseDateEraNamesBeyondSingleWord(t *testing.T) {
 		{wordyEra, wordyPrevEra, "Febris 15, 5 Age of Dark", -5, false},
 		{wordyEra, wordyPrevEra, "The battle of 2/15/5 Age of Dark, as told later", -5, false},
 		{wordyEra, wordyPrevEra, "2/15/5 Age of Light", 5, true},
-		// An era name is only recognized as a whole: a longer word that merely begins with it is not the era, so it
-		// is ignored like any other unrecognized suffix rather than silently flipping the year's sign.
+		// A longer word that merely begins with an era name is an unrecognized suffix, ignored like any other.
 		{"AD", "BC", "2/15/5 BCE", 5, false},
 		{dottedEra, dottedPrevEra, "2/15/5 B.C.E.", 5, false},
 		{"AD", "BC", "2/15/5 BC.", -5, false}, // trailing punctuation does not stop the era from matching
-		{"AD", "BC", "2/15/5BC", -5, false},   // nor does the absence of a space, as before
+		{"AD", "BC", "2/15/5BC", -5, false},   // nor does the absence of a space
 	} {
 		cal, err := eraTestCalendar(tc.era, tc.prev)
 		c.NoError(err)
@@ -609,10 +568,8 @@ func TestParseDateEraNamesBeyondSingleWord(t *testing.T) {
 	}
 }
 
-// TestParseDateMonthNamesBeyondSingleWord guards the month name against being matched as a generic alphabetic word.
-// Valid permits month names with spaces, punctuation and non-ASCII letters, and every format that emits a month name
-// (LongFormat, FullFormat and the abbreviating MediumFormat) must parse back to the same date on such a calendar. The
-// issue's own example: with months "New Moon" and "Old Moon", "New Moon 5, 100" failed with 'invalid month text "Moon"'.
+// TestParseDateMonthNamesBeyondSingleWord pins that month names with spaces, punctuation and non-ASCII letters parse
+// back from every format that emits a month name.
 func TestParseDateMonthNamesBeyondSingleWord(t *testing.T) {
 	c := check.New(t)
 	cal, err := calendar.New(&calendar.Config{
@@ -650,10 +607,7 @@ func TestParseDateMonthNamesBeyondSingleWord(t *testing.T) {
 	c.HasError(err)
 }
 
-// TestParseDateNamesWithRegexMetacharacters guards the quoting in the per-calendar parse patterns. Month and era names
-// are interpolated into a regular expression, so any metacharacters in them must be matched literally: a month named
-// ".*" must not become a wildcard that swallows the surrounding text, "(" must not break compilation, and "|" must not
-// split a name into two alternatives.
+// TestParseDateNamesWithRegexMetacharacters pins that metacharacters in month and era names are matched literally.
 func TestParseDateNamesWithRegexMetacharacters(t *testing.T) {
 	c := check.New(t)
 	var cal *calendar.Calendar
@@ -682,7 +636,6 @@ func TestParseDateNamesWithRegexMetacharacters(t *testing.T) {
 			c.Equal(want, got, "month %d round-trip via %q", month, formatted)
 		}
 	}
-	// Each metacharacter name matches only itself, never what it would mean as a pattern.
 	_, err = cal.ParseDate("anything 5, 100") // ".*" is not a wildcard
 	c.HasError(err)
 	_, err = cal.ParseDate("X 5, 100") // "X|Bar" is one name, not two
@@ -701,9 +654,8 @@ func TestParseDateNamesWithRegexMetacharacters(t *testing.T) {
 
 func TestParseDateSharedEraSuffix(t *testing.T) {
 	c := check.New(t)
-	// When a calendar uses the same name for both eras (as the Pathfinder calendars do), the suffix cannot
-	// disambiguate the year, so a negative year combined with that suffix is NOT a contradiction and must still
-	// parse, unlike the distinct-era cases rejected in TestParseDate.
+	// With the same name for both eras the suffix cannot disambiguate, so a negative year with it is not a
+	// contradiction.
 	cfg := calendar.Gregorian().Config()
 	cfg.Era = "AR"
 	cfg.PreviousEra = "AR"
@@ -730,12 +682,12 @@ func TestParseDateAmbiguousMonthAbbreviation(t *testing.T) {
 	})
 	c.NoError(err)
 
-	// The ambiguous abbreviation must be rejected rather than silently resolving to the first match.
+	// The ambiguous abbreviation is rejected rather than resolving to the first match.
 	_, err = cal.ParseDate("Mar 5, 1200")
 	c.HasError(err)
 	c.True(strings.Contains(err.Error(), "ambiguous"), "expected an ambiguity error, got: %v", err)
 
-	// Full names disambiguate, each resolving to its own month.
+	// Full names disambiguate.
 	date, err := cal.ParseDate("Marbol 5, 1200")
 	c.NoError(err)
 	c.Equal(1, date.Month())
@@ -743,7 +695,7 @@ func TestParseDateAmbiguousMonthAbbreviation(t *testing.T) {
 	c.NoError(err)
 	c.Equal(2, date.Month())
 
-	// An abbreviation that is unique still works, as does the full name.
+	// A unique abbreviation still works.
 	date, err = cal.ParseDate("Jun 5, 1200")
 	c.NoError(err)
 	c.Equal(3, date.Month())
@@ -788,8 +740,7 @@ func TestMarshaling(t *testing.T) {
 func TestZeroValueDate(t *testing.T) {
 	c := check.New(t)
 
-	// A zero-value Date has no associated calendar; accessors and formatting must fall back to
-	// Default rather than panicking with a nil pointer dereference (mirroring UnmarshalText).
+	// A zero-value Date falls back to Default rather than panicking.
 	var date calendar.Date
 	c.NotPanics(func() {
 		c.Equal(1, date.Year())
@@ -802,7 +753,6 @@ func TestZeroValueDate(t *testing.T) {
 	c.NoError(err)
 	c.Equal("1/1/1", string(text))
 
-	// json.Marshal of a struct holding an unset Date field must not panic.
 	type embedded struct {
 		Date calendar.Date
 	}
@@ -849,9 +799,8 @@ func TestUnmarshaling(t *testing.T) {
 	c.Equal(target, date)
 }
 
-// TestUnmarshalTextRejectsInvalidDate pins UnmarshalText's error return, the only path by which a JSON or YAML decode
-// surfaces a bad date. Text that is not a date at all, and text that is a date on no calendar, must both fail, and a
-// failed unmarshal must leave the Date as it was.
+// TestUnmarshalTextRejectsInvalidDate pins that text that is not a date, or a date on no calendar, fails and leaves the
+// Date as it was.
 func TestUnmarshalTextRejectsInvalidDate(t *testing.T) {
 	c := check.New(t)
 	want := calendar.Gregorian().MustNewDate(9, 22, 2017)
@@ -879,11 +828,8 @@ func TestUnmarshalTextRejectsInvalidDate(t *testing.T) {
 	c.HasError(yaml.Unmarshal([]byte(`date: total nonsense`), &embeddedPtrDate))
 }
 
-// TestAddSaturates exercises Date.Add's documented saturation contract directly, in both directions. A Date is
-// confined to the years IsValidYear accepts, so the limits are the first day of year math.MinInt32 and the last day of
-// year math.MaxInt32 on the date's own calendar. A sum that wraps around int64 lands on the far side of zero, and Add
-// once compared that wrapped sum against the limit before checking for the wrap, so a negative overflow saturated at
-// the upper limit rather than the lower.
+// TestAddSaturates pins Add's saturation at the first day of year math.MinInt32 and the last day of year math.MaxInt32,
+// including when the sum wraps around int64.
 func TestAddSaturates(t *testing.T) {
 	c := check.New(t)
 	cal := calendar.Gregorian()
@@ -891,7 +837,7 @@ func TestAddSaturates(t *testing.T) {
 	c.Equal(int64(-4), cal.NewDateByDays(3).Add(-7).Days())
 	c.Equal(int64(5), calendar.Date{}.Add(5).Days())
 
-	// The limits themselves are representable; one day past either is not.
+	// The limits are representable; one day past either is not.
 	last := cal.MustNewDate(12, 31, math.MaxInt32).Days()
 	first := cal.MustNewDate(1, 1, math.MinInt32).Days()
 	c.Equal(last, cal.NewDateByDays(last-1).Add(1).Days())
@@ -901,7 +847,7 @@ func TestAddSaturates(t *testing.T) {
 	c.Equal(first, cal.NewDateByDays(first).Add(-1).Days())
 	c.Equal(first, cal.NewDateByDays(0).Add(first-1).Days())
 
-	// A sum that wraps around int64 saturates toward the sign of the delta, not the sign of the wrapped result.
+	// A wrapped sum saturates toward the sign of the delta.
 	c.Equal(last, cal.NewDateByDays(1).Add(math.MaxInt64).Days())
 	c.Equal(last, cal.NewDateByDays(last).Add(math.MaxInt64).Days())
 	c.Equal(first, cal.NewDateByDays(-1).Add(math.MinInt64).Days())
@@ -911,8 +857,7 @@ func TestAddSaturates(t *testing.T) {
 	c.Equal(first, cal.NewDateByDays(last).Add(math.MinInt64).Days())
 	c.Equal(last, cal.NewDateByDays(first).Add(math.MaxInt64).Days())
 
-	// The limits belong to the calendar: one with a different leap rule ends year math.MaxInt32 on a different day
-	// count, but still saturates at 12/31 of that year.
+	// The limits belong to the calendar: a different leap rule ends year math.MaxInt32 on a different day count.
 	other := calendar.PathfinderAbsalomReckoning()
 	c.True(other.NewDateByDays(math.MaxInt64).Days() != last)
 	for _, each := range []*calendar.Calendar{cal, other} {
@@ -920,7 +865,7 @@ func TestAddSaturates(t *testing.T) {
 		c.Equal("1/1/-2147483648", each.NewDateByDays(math.MinInt64).Format("%N/%D/%z"))
 	}
 
-	// The calendar with the longest years Config.Valid allows saturates at the farthest days any Date can reach.
+	// The longest years Valid allows saturate at the farthest days any Date can reach.
 	huge := maximalCalendar(c, false)
 	c.Equal(int64(-1<<61), huge.NewDateByDays(math.MinInt64).Days())
 	c.Equal(int64(-1<<61), huge.NewDateByDays(-1).Add(math.MinInt64).Days())
@@ -929,12 +874,8 @@ func TestAddSaturates(t *testing.T) {
 	c.Equal(math.MaxInt32, huge.NewDateByDays(math.MaxInt64).Year())
 }
 
-// TestDatesConfinedToValidYears verifies that no Date can leave the years IsValidYear accepts, which is what lets Year
-// return an int32: stepping past the last day of year math.MaxInt32 or before the first day of year math.MinInt32
-// saturates at that boundary day, and the boundary days resolve, format, parse back and render without panicking.
-// Dates beyond the int32 years were once reachable through Add, and their leap status was then misjudged by the
-// range-checked IsLeapYear, so 2/29 of year 2^31 rendered as 3/1 and its last day panicked with "unable to determine
-// month".
+// TestDatesConfinedToValidYears pins that no Date can leave the years IsValidYear accepts: stepping past either
+// boundary saturates, and the boundary days resolve, format, parse back and render.
 func TestDatesConfinedToValidYears(t *testing.T) {
 	c := check.New(t)
 	for _, cal := range []*calendar.Calendar{calendar.Gregorian(), calendar.PathfinderAbsalomReckoning()} {
@@ -962,8 +903,7 @@ func TestDatesConfinedToValidYears(t *testing.T) {
 				var buf bytes.Buffer
 				d.TextCalendarMonth(&buf)
 			}, "%s", text)
-			// The boundary years round-trip through their own text, including the previous-era magnitude 2147483648
-			// that only fits an int32 once its sign is restored.
+			// The boundary years round-trip through their own text, including the previous-era magnitude 2147483648.
 			got, err := cal.ParseDate(text)
 			c.NoError(err, "%s", text)
 			c.True(got.Equal(d), "%s parsed back as %s", text, got.Format(calendar.ShortFormat))
@@ -986,9 +926,8 @@ func TestDatesConfinedToValidYears(t *testing.T) {
 	c.True(strings.HasPrefix(buf.String(), "Year 2147483648 BC\n"))
 }
 
-// TestFormatPassesThroughNonDirectives verifies that a % which does not introduce a directive is emitted as written,
-// along with the character after it, and that a trailing % is not lost. The directive switch once had no default case,
-// so "50% off" rendered as "50off" and "100%" as "100".
+// TestFormatPassesThroughNonDirectives pins that a % not introducing a directive, and a trailing %, are emitted as
+// written.
 func TestFormatPassesThroughNonDirectives(t *testing.T) {
 	c := check.New(t)
 	d := calendar.Gregorian().MustNewDate(9, 22, 2017)
@@ -1005,8 +944,8 @@ func TestFormatPassesThroughNonDirectives(t *testing.T) {
 	c.Equal("2017%", buf.String())
 }
 
-// TestDateEqual pins Date.Equal, which exists because == cannot compare a zero Date{} with the same day obtained from
-// Default(): the former carries no calendar reference and the latter does, though both resolve to the default calendar.
+// TestDateEqual pins Equal, which exists because == distinguishes a zero Date{} from the same day obtained from
+// Default().
 func TestDateEqual(t *testing.T) {
 	c := check.New(t)
 	greg := calendar.Gregorian()

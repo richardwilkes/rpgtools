@@ -27,8 +27,7 @@ func TestCompoundSkipsNilNamers(t *testing.T) {
 	c := check.New(t)
 	a := fixedNamer("A")
 	b := fixedNamer("B")
-	// Typed nil pointers stored in a Namer interface are not == nil, so a plain interface comparison lets them through
-	// and they panic on first use. Every pointer-receiver namer in the package is represented.
+	// Typed nil pointers in a Namer interface are not == nil; every pointer-receiver namer is represented.
 	var (
 		nilSimple   *SimpleNamer
 		nilLetter   *MarkovLetterNamer
@@ -36,8 +35,7 @@ func TestCompoundSkipsNilNamers(t *testing.T) {
 		nilCompound *CompoundNamer
 	)
 
-	// A nil namer anywhere in the list must be dropped rather than dereferenced at generation time, and it must
-	// not leave a spurious separator behind.
+	// A nil namer must be dropped without leaving a spurious separator.
 	for i, one := range []struct {
 		expected string
 		namers   []Namer
@@ -68,8 +66,7 @@ func TestCompoundSkipsEmptyNamers(t *testing.T) {
 	b := fixedNamer("B")
 	empty := fixedNamer("")
 
-	// A namer that yields an empty string (e.g. one built from empty or fully-suppressed data) contributes nothing to
-	// separate, so it must not leave a doubled, leading, or trailing separator, just as a nil namer does not.
+	// An empty result must not leave a doubled, leading or trailing separator.
 	for i, one := range []struct {
 		expected string
 		namers   []Namer

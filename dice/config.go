@@ -18,10 +18,8 @@ import (
 	"github.com/richardwilkes/toolbox/v2/xreflect"
 )
 
-// maxFieldValue is the largest value permitted for any of a Config's Max* fields. It sits one below math.MaxInt so the
-// overflow checks -- and computeExtraDice, which forms a sides+1 intermediate from MaxSides -- can add 1 to a field
-// value without that addition itself wrapping. With the fields bounded this way, equationOverflows always sees the true
-// values and reliably detects a real overflow instead of being handed one that has already wrapped negative.
+// maxFieldValue is the largest value permitted for any of a Config's Max* fields. It sits one below math.MaxInt so that
+// the overflow checks and computeExtraDice's sides+1 intermediate can add 1 to a field without wrapping.
 const maxFieldValue = math.MaxInt - 1
 
 var (
@@ -37,15 +35,12 @@ var (
 	}
 )
 
-// Config holds various configuration options Dice.
+// Config holds the options for parsing, formatting and rolling Dice.
 type Config struct {
-	// Randomizer is the source of randomness to use when rolling dice. When Clone() is called, it is copied by
-	// reference, so the same Randomizer is used in both the original and the clone, and DefaultConfig hands the same
-	// instance to every Roller that has no Config of its own. Nothing in this package synchronizes calls to it, so a
-	// Randomizer must be safe for concurrent use if the Roller holding it is shared between goroutines, and always if it
-	// is installed via SetDefaultConfig. The Randomizer returned by xrand.New is safe for concurrent use. A
-	// math/rand-backed Randomizer -- the natural way to get reproducible rolls -- is not, and so must be given only to a
-	// Roller that is confined to a single goroutine, never to the default Config.
+	// Randomizer is the source of randomness to use when rolling dice. Clone copies it by reference, and nothing in
+	// this package synchronizes calls to it, so it must be safe for concurrent use if the Roller holding it is shared
+	// between goroutines, and always if installed via SetDefaultConfig. The Randomizer returned by xrand.New is; a
+	// math/rand-backed one is not.
 	Randomizer    xrand.Randomizer
 	MaxCount      int
 	MaxSides      int
@@ -56,11 +51,8 @@ type Config struct {
 	// suppressed if it is a '1' and the sides value is always shown.
 	GURPSFormat bool
 	// ExtraDiceFromModifiers determines if modifiers greater than or equal to the average result of the base die should
-	// be converted to extra dice. This is not merely cosmetic: the conversion is applied by Roll, Minimum, Average,
-	// Maximum and PoolProbability as well as Format, so it changes the distribution of rolled results. For example,
-	// with it set, 1d6+8 is treated as 3d6+1, so it displays as such, Minimum returns 4 rather than 9, Maximum returns
-	// 19 rather than 14, Roll produces a value in [4,19] rather than [9,14], and PoolProbability sees a pool of three
-	// dice rather than one.
+	// be converted to extra dice. The conversion is applied by Roll, Minimum, Average, Maximum and PoolProbability as
+	// well as Format, so it changes the distribution of results: with it set, 1d6+8 is treated as 3d6+1.
 	ExtraDiceFromModifiers bool
 }
 
@@ -72,9 +64,8 @@ func DefaultConfig() *Config {
 }
 
 // SetDefaultConfig sets the default Config to use when one isn't explicitly set on a Roller. A copy will be made. If
-// the Config is nil or otherwise not valid (see Valid), an error describing the problem is returned and the default is
-// left unchanged. Every zero-value Roller shares the installed Randomizer, so it must be safe for concurrent use (see
-// Config.Randomizer).
+// the Config is not Valid, an error is returned and the default is left unchanged. Every zero-value Roller shares the
+// installed Randomizer, so it must be safe for concurrent use.
 func SetDefaultConfig(cfg *Config) error {
 	if err := cfg.Valid(); err != nil {
 		return err
@@ -85,8 +76,7 @@ func SetDefaultConfig(cfg *Config) error {
 	return nil
 }
 
-// Clone this configuration. Currently, this is a simple copy, but provided so that if the options become more complex
-// in the future, there is one canonical way to clone them. A nil Config clones to nil.
+// Clone this configuration. A nil Config clones to nil.
 func (c *Config) Clone() *Config {
 	if c == nil {
 		return nil
@@ -137,25 +127,16 @@ func (c *Config) Valid() error {
 //
 //	value = (c.MaxCount*c.MaxSides + c.MaxModifier) * c.MaxMultiplier
 //
-// would overflow an int. It assumes the ranges Valid() enforces before calling it: every Max* field is <=
-// maxFieldValue, c.MaxCount >= 1, c.MaxSides >= 2, c.MaxModifier >= 0 and c.MaxMultiplier >= 1, so every term is
-// non-negative, each step can only overflow past math.MaxInt, and the sides+1 intermediates computeExtraDice and
-// Average form cannot themselves wrap. Each step is checked in Go's evaluation order, so an intermediate result
-// overflowing is caught even when the final value would have been representable. Average forms a slightly larger
-// intermediate than the equation above -- count*(sides+1) rather than count*sides -- so that product+count step is
-// bounded as well, keeping every Roller computation safe and not just the one shown.
-//
-// The ExtraDiceFromModifiers flag needs no separate treatment: applyExtraDiceFromModifiers never adds dice past
-// MaxCount and only ever reduces the modifier, so the dice it produces stay inside the bounds this equation measures.
-// Measuring the uncapped conversion instead would reject configs that are perfectly safe at runtime, such as a MaxCount
-// of 1 with a huge MaxModifier.
+// or Average's larger count*(sides+1) intermediate would overflow an int. It assumes the ranges Valid enforces before
+// calling it, so every term is non-negative. Each step is checked in evaluation order so an overflowing intermediate is
+// caught even when the final value would fit. ExtraDiceFromModifiers needs no separate treatment: the conversion never
+// adds dice past MaxCount and only reduces the modifier.
 func (c *Config) equationOverflows() bool {
 	if mulOverflows(c.MaxCount, c.MaxSides) {
 		return true
 	}
 	product := c.MaxCount * c.MaxSides
-	// Average evaluates count*(sides+1) -- that is, product + count -- before halving, so the product must leave room
-	// to add count back without overflowing.
+	// Average evaluates count*(sides+1), which is product+count.
 	if product > math.MaxInt-c.MaxCount {
 		return true
 	}
@@ -169,22 +150,19 @@ func mulOverflows(a, b int) bool {
 	return a != 0 && b > math.MaxInt/a
 }
 
-// computeExtraDice converts as much of modifier as possible into extra dice of the given number of sides, returning the
-// number of dice to add and the modifier left over after the conversion. No more than maxAdjustment dice are produced;
-// any modifier that would have converted into further dice beyond that limit is left in the returned modifier instead.
-// Pass a maxAdjustment of math.MaxInt (or any value at least as large as the uncapped count) to convert without a cap.
+// computeExtraDice converts as much of modifier as possible into at most maxAdjustment extra dice of the given number
+// of sides, returning the number of dice to add and the modifier left over.
 func computeExtraDice(sides, modifier, maxAdjustment int) (dieCountAdjustment, adjustedModifier int) {
 	if sides < 2 || modifier < sides/2 || maxAdjustment < 1 {
 		return 0, modifier
 	}
 	average := (sides + 1) / 2
 	if sides&1 == 1 {
-		// Odd number of sides, so average is a whole number and every die consumes exactly average of the modifier.
+		// Odd sides: average is a whole number, so every die consumes exactly average.
 		dieCountAdjustment = min(modifier/average, maxAdjustment)
 		return dieCountAdjustment, modifier - dieCountAdjustment*average
 	}
-	// Even number of sides, so each die's true average is average+0.5. A pair of dice therefore consumes exactly
-	// 2*average+1 of the modifier and a lone die consumes average+1 (rounding the trailing half up).
+	// Even sides: the true average is average+0.5, so a pair of dice consumes 2*average+1 and a lone die average+1.
 	perPair := 2*average + 1
 	dieCountAdjustment = 2 * (modifier / perPair)
 	adjustedModifier = modifier % perPair
@@ -193,9 +171,7 @@ func computeExtraDice(sides, modifier, maxAdjustment int) (dieCountAdjustment, a
 		adjustedModifier -= average + 1
 	}
 	if dieCountAdjustment > maxAdjustment {
-		// The full conversion overshoots the cap, so keep only maxAdjustment dice and leave the rest of the modifier
-		// untouched. maxAdjustment/2 whole pairs each consume perPair; an odd cap adds one lone die consuming
-		// average+1, charging exactly what the greedy conversion above would have charged those same dice.
+		// Keep only maxAdjustment dice, charging exactly what the greedy conversion above charged them.
 		dieCountAdjustment = maxAdjustment
 		consumed := (maxAdjustment / 2) * perPair
 		if maxAdjustment&1 == 1 {

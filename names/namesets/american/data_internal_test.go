@@ -18,10 +18,8 @@ import (
 
 func TestEmbeddedCorporaLoadEveryLine(t *testing.T) {
 	c := check.New(t)
-	// Each embedded file holds one "name,count" line per distinct name, with no blank lines and no repeated or
-	// non-positive entries, so the parsed map must hold exactly one entry per non-blank line. A loader regression that
-	// silently dropped lines would slip past a bare non-empty check; this pins the corpora at their full size (tens of
-	// thousands of first names and over a hundred thousand surnames).
+	// Each embedded file holds one "name,count" line per distinct name, so the parsed map must hold exactly one entry
+	// per non-blank line; this pins the corpora at full size.
 	for name, tc := range map[string]struct {
 		load func() map[string]int
 		text string

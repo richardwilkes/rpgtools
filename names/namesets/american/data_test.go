@@ -19,9 +19,7 @@ import (
 
 func TestNameSetsReturnIndependentEqualCopies(t *testing.T) {
 	c := check.New(t)
-	// The embedded corpora are now parsed at most once and cached, but each call must still hand back an independent map
-	// the caller may mutate without disturbing the cache or other callers. Verify both that repeated calls agree and that
-	// a mutation to one returned map never leaks into a later call's map.
+	// Each call must return an independent map: repeated calls agree and a mutation never leaks into a later call.
 	for name, fn := range map[string]func() map[string]int{
 		"Female": american.Female,
 		"Male":   american.Male,
@@ -36,8 +34,7 @@ func TestNameSetsReturnIndependentEqualCopies(t *testing.T) {
 		second := fn()
 		c.True(maps.Equal(first, second), "%s: repeated calls must return equal content", name)
 
-		// Pick an arbitrary existing key, then mutate the first map two ways: bump an existing count and add a key that
-		// cannot occur in the data.
+		// Bump an existing count and add a key that cannot occur in the data.
 		var existing string
 		for k := range first {
 			existing = k

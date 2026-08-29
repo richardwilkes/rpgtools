@@ -36,8 +36,7 @@ func TestSimple(t *testing.T) {
 
 func TestSimpleEmptyData(t *testing.T) {
 	c := check.New(t)
-	// Data that is empty or contains only blank names (which the constructor trims away) leaves the namer with nothing
-	// to choose from. This must yield an empty name rather than panic, mirroring TestMarkovEmptyData.
+	// Empty or blank data must yield an empty name rather than panic.
 	for i, n := range []*SimpleNamer{
 		NewSimpleNamer(map[string]int{}, false, false),
 		NewSimpleNamer(blankWeighted, false, false),
@@ -53,10 +52,7 @@ func TestSimpleEmptyData(t *testing.T) {
 
 func TestSimpleBuildsCumulativeWeightedSteps(t *testing.T) {
 	c := check.New(t)
-	// SimpleNamer stores its weighted names in the same weightedStep[string] the Markov namers use, rather than a
-	// bespoke pair type. Building from a set with distinct counts must yield those names in sorted order, each paired
-	// with the running cumulative weight (so the final entry holds the grand total) -- the exact shape pickWeighted
-	// consumes.
+	// Names must be stored in sorted order, each with the running cumulative weight.
 	s := NewSimpleNamer(map[string]int{"coral": 3, "amber": 2, "ivory": 1}, false, false)
 	c.Equal([]weightedStep[string]{
 		{step: "amber", last: 2},
@@ -67,10 +63,8 @@ func TestSimpleBuildsCumulativeWeightedSteps(t *testing.T) {
 
 func TestSimpleReproducibleAcrossBuilds(t *testing.T) {
 	c := check.New(t)
-	// Go randomizes map iteration order on every range, so rebuilding a SimpleNamer from identical data exercises
-	// different insertion orders. The cumulative-weight table, and therefore the names a seeded randomizer produces,
-	// must not depend on that order. Routing the build through the shared cumulativeWeights helper (which sorts the
-	// names) preserves this guarantee; the data has many distinct names so a non-deterministic order would change it.
+	// The cumulative-weight table, and so the names a seeded randomizer produces, must not depend on map iteration
+	// order.
 	reproData := map[string]int{
 		"alpha": 1, "bravo": 2, "charlie": 3, "delta": 1, "echo": 2,
 		"foxtrot": 3, "golf": 1, "hotel": 2, "india": 3, "juliet": 1,

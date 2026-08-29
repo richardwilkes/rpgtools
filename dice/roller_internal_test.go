@@ -28,7 +28,7 @@ func TestExtractValueCapsWithoutOverflow(t *testing.T) {
 		wantPos  int
 	}{
 		{"123", math.MaxInt, 123, 3},                              // 0 - ordinary value, no capping
-		{twentyNines, math.MaxInt, math.MaxInt, len(twentyNines)}, // 1 - regression: cap, never wrap to garbage
+		{twentyNines, math.MaxInt, math.MaxInt, len(twentyNines)}, // 1 - cap, never wrap
 		{twentyNines, 999_999, 999_999, len(twentyNines)},         // 2 - a small cap still applies
 		{"9", 1, 1, 1},           // 3 - a single digit past a tiny cap
 		{"0", math.MaxInt, 0, 1}, // 4 - zero

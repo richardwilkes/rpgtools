@@ -52,7 +52,7 @@ func (runStepper) write(b *strings.Builder, step string) {
 	b.WriteString(step)
 }
 
-// runClass is the kind of rune a run is made of. Marks (combining accents) take the class of the rune they follow, so a
+// runClass is the kind of rune a run is made of. A combining mark takes the class of the rune it follows, so a
 // decomposed "e\u0301" stays in one run just as the precomposed "é" does.
 type runClass uint8
 
@@ -77,10 +77,8 @@ func classify(ch rune, prev runClass) runClass {
 	}
 }
 
-// decompose splits s into a sequence of maximal runs, each consisting entirely of vowels, entirely of consonants, or
-// entirely of non-letters. Keeping non-letters (spaces, apostrophes, hyphens, digits) in runs of their own means a
-// name's punctuation never merges into a consonant cluster: "O'Brien" yields ["O", "'", "Br", "ie", "n"] rather than
-// ["O", "'Br", "ie", "n"].
+// decompose splits s into maximal runs of vowels, of consonants, or of non-letters: "O'Brien" yields ["O", "'", "Br",
+// "ie", "n"].
 func decompose(s string) []string {
 	var runs []string
 	var buffer strings.Builder
@@ -109,9 +107,8 @@ func NewMarkovRunNamer(data map[string]int, lowered, firstToUpper bool) *MarkovR
 }
 
 // NewMarkovRunUnweightedNamer creates a new MarkovRunNamer. The data should be a list of names to train the model with;
-// each occurrence counts once, so a name that appears more than once is weighted accordingly rather than collapsed to a
-// single entry. If 'lowered' is true, then the result will be forced to lowercase. If 'firstToUpper' is true, then the
-// result will have its first letter capitalized.
+// a name that appears more than once is weighted accordingly. If 'lowered' is true, then the result will be forced to
+// lowercase. If 'firstToUpper' is true, then the result will have its first letter capitalized.
 func NewMarkovRunUnweightedNamer(data []string, lowered, firstToUpper bool) *MarkovRunNamer {
 	return newMarkovRunNamer(unweighted(data), lowered, firstToUpper)
 }

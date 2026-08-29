@@ -21,14 +21,12 @@ import (
 	"github.com/richardwilkes/toolbox/v2/xstrings"
 )
 
-// maxWeight caps an individual name or transition weight. Bounding each weight at math.MaxInt32 keeps the int64
-// cumulative totals (see cumulativeWeights and pickWeighted) safe from overflow no matter how large the supplied counts
-// are or how many entries are summed: even four billion maximum-weight entries stay within int64.
+// maxWeight caps an individual name or transition weight, so the int64 cumulative totals cannot overflow no matter how
+// many entries are summed.
 const maxWeight = math.MaxInt32
 
-// addWeight returns sum + delta saturated at maxWeight. delta is capped at maxWeight first (a negative delta passes
-// through unchanged, since callers drop non-positive counts before they reach a weighted table), so even a
-// pathologically large count can neither push an accumulated weight past the ceiling nor overflow a platform int.
+// addWeight returns sum + delta saturated at maxWeight, capping delta first so the addition cannot overflow. A negative
+// delta passes through unchanged; callers drop non-positive counts before they reach a weighted table.
 func addWeight(sum, delta int) int {
 	delta = min(delta, maxWeight)
 	if sum > maxWeight-delta {
@@ -45,18 +43,13 @@ type Namer interface {
 	GenerateNameWithRandomizer(rnd xrand.Randomizer) string
 }
 
-// generateName produces a name from n using the shared default randomizer: xrand.New returns a stateless singleton
-// backed by crypto/rand that is safe for concurrent use, so nothing is allocated per call. Every Namer implementation's
-// GenerateName delegates here so the choice of default randomizer lives in one place instead of being repeated in each.
-// The weighting this package applies is only as uniform as that randomizer's Intn, which needs toolbox v2.17.0 or
-// later: earlier versions reduced a byte-width draw with v % n, which visibly skewed selection whenever a cumulative
-// total sat just above a byte boundary.
+// generateName produces a name from n using the default randomizer, which every GenerateName delegates to. xrand.New
+// returns a stateless singleton that is safe for concurrent use, so nothing is allocated per call.
 func generateName(n Namer) string {
 	return n.GenerateNameWithRandomizer(xrand.New())
 }
 
-// applyCase applies the optional case transformations shared by every namer: lower-casing the whole result and/or
-// upper-casing its first letter.
+// applyCase applies the case transformations shared by every namer.
 func applyCase(in string, lowered, firstToUpper bool) string {
 	if lowered {
 		in = strings.ToLower(in)
@@ -81,7 +74,7 @@ func unweighted(names []string) iter.Seq2[string, int] {
 
 // pickWeighted selects an entry at random from a slice ordered by ascending cumulative weight, where cumulativeOf
 // reports the running weight total through that entry (so the last entry's value is the grand total). It reports false
-// when there is nothing to pick. Centralizing the selection keeps the off-by-one prone arithmetic in a single place.
+// when there is nothing to pick.
 func pickWeighted[T any](entries []T, rnd xrand.Randomizer, cumulativeOf func(T) int64) (T, bool) {
 	var zero T
 	if len(entries) == 0 {
@@ -92,9 +85,7 @@ func pickWeighted[T any](entries []T, rnd xrand.Randomizer, cumulativeOf func(T)
 		return zero, false
 	}
 	v := 1 + randomBelow(rnd, total)
-	// The cumulative weights are non-decreasing, so the entry to pick is the first one whose running total reaches v.
-	// Binary search for it rather than scanning every entry: a SimpleNamer or transition key built from many entries
-	// would otherwise pay an O(n) walk on every draw, the same linear-scan trap Date.Year once had.
+	// The entry to pick is the first whose cumulative total reaches v.
 	if i, _ := slices.BinarySearchFunc(entries, v, func(e T, target int64) int {
 		return cmp.Compare(cumulativeOf(e), target)
 	}); i < len(entries) {
@@ -103,21 +94,16 @@ func pickWeighted[T any](entries []T, rnd xrand.Randomizer, cumulativeOf func(T)
 	return zero, false
 }
 
-// randomBelow returns a uniformly distributed value in [0, n) for a positive n. The cumulative totals are int64 so that
-// summing many weights cannot overflow, but Randomizer.Intn works in the platform int: on a 64-bit platform every total
-// fits and a single draw suffices, while on a 32-bit platform a total past math.MaxInt (two saturated weights are
-// enough) would be truncated by a plain int conversion. Intn(-2) then returns 0 and every draw would silently select
-// the first entry, so such totals are drawn in two parts instead.
+// randomBelow returns a uniformly distributed value in [0, n) for a positive n. Randomizer.Intn works in the platform
+// int, so on a 32-bit platform a total past math.MaxInt (two saturated weights suffice) is drawn in two parts.
 func randomBelow(rnd xrand.Randomizer, n int64) int64 {
 	return randomBelowWithLimit(rnd, n, math.MaxInt)
 }
 
 // randomBelowWithLimit is randomBelow with the largest argument Intn accepts made explicit, so the two-part path can be
-// exercised on any platform. When n exceeds limit the draw is composed as hi*limit+lo, with hi drawn from
-// [0, ceil(n/limit)) and lo from [0, limit); every value below n corresponds to exactly one (hi, lo) pair, so rejecting
-// the values at or above n keeps the result uniform. The rejection loop is bounded so that a degenerate Randomizer
-// (one that keeps returning the same out-of-range pair) cannot hang it; after the last attempt the value is folded into
-// range, which is biased but finite.
+// tested on any platform. When n exceeds limit the draw is hi*limit+lo, with hi in [0, ceil(n/limit)) and lo in
+// [0, limit); rejecting values at or above n keeps the result uniform. The rejection loop is bounded so a degenerate
+// Randomizer cannot hang it; after the last attempt the value is folded into range, which is biased but finite.
 func randomBelowWithLimit(rnd xrand.Randomizer, n, limit int64) int64 {
 	if n <= limit {
 		return int64(rnd.Intn(int(n)))
@@ -134,9 +120,7 @@ func randomBelowWithLimit(rnd xrand.Randomizer, n, limit int64) int64 {
 	return v % n
 }
 
-// cumulativePairs converts a transition table of per-item counts into one of per-item cumulative weights suitable for
-// pickWeighted. makePair builds the stored pair from an item and its running cumulative total. Each table is built by
-// cumulativeWeights, so the accumulation is defined in exactly one place.
+// cumulativePairs applies cumulativeWeights to every entry of a transition table.
 func cumulativePairs[K comparable, V cmp.Ordered, P any](source map[K]map[V]int, makePair func(item V, cumulative int64) P) map[K][]P {
 	result := make(map[K][]P, len(source))
 	for key, counts := range source {
@@ -145,12 +129,8 @@ func cumulativePairs[K comparable, V cmp.Ordered, P any](source map[K]map[V]int,
 	return result
 }
 
-// cumulativeWeights converts a map of per-item counts into a slice pairing each item with the running cumulative weight
-// total through it (so the last entry's total is the grand total), the form pickWeighted consumes. The total is
-// accumulated as an int64 so that summing many weights (each capped at maxWeight by the callers) cannot overflow. Items
-// are accumulated in sorted order so that a given seeded randomizer reproduces the same selections across process runs;
-// iterating the map in Go's randomized order would otherwise vary how the cumulative weights line up with the draws,
-// and thus the generated names, from one run to the next.
+// cumulativeWeights converts a map of per-item counts into the slice of cumulative weights pickWeighted consumes, built
+// with makePair. Items are taken in sorted order so a seeded randomizer reproduces the same selections across runs.
 func cumulativeWeights[V cmp.Ordered, P any](counts map[V]int, makePair func(item V, cumulative int64) P) []P {
 	var total int64
 	pairs := make([]P, 0, len(counts))
