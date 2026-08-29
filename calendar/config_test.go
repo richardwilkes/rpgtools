@@ -29,6 +29,171 @@ func TestValidPrefabs(t *testing.T) {
 	c.NoError(calendar.PathfinderImperialCalendar().Config().Valid())
 }
 
+// TestConfigValidRejectsEachRule pins every rule Valid enforces, one violation at a time, starting from the Gregorian
+// Config so that only the mutated field is at fault. Each error must name the rule that fired so a violation cannot be
+// caught by an earlier, unrelated check by accident.
+func TestConfigValidRejectsEachRule(t *testing.T) {
+	c := check.New(t)
+	const (
+		badSeasonStartDay = "seasons must start in a valid day within the month"
+		badSeasonEndDay   = "seasons must end in a valid day within the month"
+	)
+	var nilCfg *calendar.Config
+	err := nilCfg.Valid()
+	c.HasError(err)
+	if err != nil {
+		c.Contains(err.Error(), "nil")
+	}
+	for _, tc := range []struct {
+		name   string
+		mutate func(cfg *calendar.Config)
+		want   string
+	}{
+		{"no week days", func(cfg *calendar.Config) { cfg.WeekDays = nil }, "at least one week day"},
+		{"empty week day name", func(cfg *calendar.Config) { cfg.WeekDays[3] = "" }, "week day names must not be empty"},
+		{
+			"week day name with leading whitespace", func(cfg *calendar.Config) { cfg.WeekDays[0] = " Sunday" },
+			"week day names may not begin or end with whitespace",
+		},
+		{
+			"week day name with trailing whitespace", func(cfg *calendar.Config) { cfg.WeekDays[6] = "Saturday\t" },
+			"week day names may not begin or end with whitespace",
+		},
+		{"DayZeroWeekDay below 0", func(cfg *calendar.Config) { cfg.DayZeroWeekDay = -1 }, "DayZeroWeekDay"},
+		{"DayZeroWeekDay past the last week day", func(cfg *calendar.Config) { cfg.DayZeroWeekDay = 7 }, "DayZeroWeekDay"},
+		{"no months", func(cfg *calendar.Config) { cfg.Months = nil }, "at least one month"},
+		{"empty month name", func(cfg *calendar.Config) { cfg.Months[5].Name = "" }, "month names must not be empty"},
+		{
+			"month name with surrounding whitespace", func(cfg *calendar.Config) { cfg.Months[0].Name = " January " },
+			"month names may not begin or end with whitespace",
+		},
+		{"month with no days", func(cfg *calendar.Config) { cfg.Months[1].Days = 0 }, "at least 1 day"},
+		{"month with negative days", func(cfg *calendar.Config) { cfg.Months[1].Days = -30 }, "at least 1 day"},
+		{"leap month below 1", func(cfg *calendar.Config) { cfg.LeapYear.Month = 0 }, "LeapYear.Month"},
+		{"leap month past the last month", func(cfg *calendar.Config) { cfg.LeapYear.Month = 13 }, "LeapYear.Month"},
+		{
+			"Unless without Except", func(cfg *calendar.Config) { cfg.LeapYear.Except = 0 },
+			"LeapYear.Unless may not be set if LeapYear.Except is 0",
+		},
+		{
+			"Unless equal to Except", func(cfg *calendar.Config) { cfg.LeapYear.Unless = 100 },
+			"LeapYear.Unless must be greater than LeapYear.Except",
+		},
+		{
+			"Unless below Except", func(cfg *calendar.Config) { cfg.LeapYear.Unless = 8 },
+			"LeapYear.Unless must be greater than LeapYear.Except",
+		},
+		{"empty season name", func(cfg *calendar.Config) { cfg.Seasons[2].Name = "" }, "season names must not be empty"},
+		{
+			"season name with surrounding whitespace", func(cfg *calendar.Config) { cfg.Seasons[0].Name = "Winter " },
+			"season names may not begin or end with whitespace",
+		},
+		{
+			"season start month below 1", func(cfg *calendar.Config) { cfg.Seasons[1].StartMonth = 0 },
+			"seasons must start in a valid month",
+		},
+		{
+			"season start month past the last month", func(cfg *calendar.Config) { cfg.Seasons[1].StartMonth = 13 },
+			"seasons must start in a valid month",
+		},
+		{
+			"season start day below 1", func(cfg *calendar.Config) { cfg.Seasons[1].StartDay = 0 },
+			badSeasonStartDay,
+		},
+		{
+			"season start day past the end of its month", func(cfg *calendar.Config) { cfg.Seasons[1].StartDay = 32 },
+			badSeasonStartDay,
+		},
+		{"season start day past the leap day", func(cfg *calendar.Config) {
+			cfg.Seasons[1].StartMonth, cfg.Seasons[1].StartDay = 2, 30
+		}, badSeasonStartDay},
+		{
+			"season end month below 1", func(cfg *calendar.Config) { cfg.Seasons[3].EndMonth = 0 },
+			"seasons must end in a valid month",
+		},
+		{
+			"season end month past the last month", func(cfg *calendar.Config) { cfg.Seasons[3].EndMonth = 13 },
+			"seasons must end in a valid month",
+		},
+		{
+			"season end day below 1", func(cfg *calendar.Config) { cfg.Seasons[3].EndDay = 0 },
+			badSeasonEndDay,
+		},
+		{
+			"season end day past the end of its month", func(cfg *calendar.Config) { cfg.Seasons[3].EndDay = 32 },
+			badSeasonEndDay,
+		},
+		{
+			"season end day past the leap day", func(cfg *calendar.Config) { cfg.Seasons[0].EndDay = 30 },
+			badSeasonEndDay,
+		},
+		{
+			"era with surrounding whitespace", func(cfg *calendar.Config) { cfg.Era = " AD" },
+			"era may not begin or end with whitespace",
+		},
+		{
+			"previous era with surrounding whitespace", func(cfg *calendar.Config) { cfg.PreviousEra = "BC " },
+			"previous era may not begin or end with whitespace",
+		},
+		{"era without previous era", func(cfg *calendar.Config) { cfg.PreviousEra = "" }, "both be set or neither"},
+		{"previous era without era", func(cfg *calendar.Config) { cfg.Era = "" }, "both be set or neither"},
+		{
+			"eras differing only in case", func(cfg *calendar.Config) { cfg.Era, cfg.PreviousEra = "ad", "AD" },
+			"differ only in letter case",
+		},
+	} {
+		cfg := calendar.Gregorian().Config()
+		tc.mutate(cfg)
+		err = cfg.Valid()
+		c.HasError(err, tc.name)
+		if err != nil {
+			c.Contains(err.Error(), tc.want, tc.name)
+		}
+		_, err = calendar.New(cfg)
+		c.HasError(err, tc.name)
+	}
+
+	// The boundaries each rule permits are accepted: the last week day as day zero, season boundaries on the leap day
+	// (the day is a valid day-of-month across all years, even though it exists only in leap years), and a single shared
+	// era label.
+	cfg := calendar.Gregorian().Config()
+	cfg.DayZeroWeekDay = 6
+	cfg.Seasons[0].EndDay = 29
+	cfg.Seasons[1].StartMonth, cfg.Seasons[1].StartDay = 2, 29
+	cfg.Era, cfg.PreviousEra = "AR", "AR"
+	c.NoError(cfg.Valid())
+}
+
+// TestEraCaseIsSignificantToNeither pins the fix for eras that differed only in letter case. ParseDate matches an era
+// suffix without regard to case, so with eras "ad" and "AD" a date formatted in the current era ("1/5/2017 ad") parsed
+// back as year -2017 with no error. Such a pair is now rejected up front; a pair that differs beyond case, and a pair
+// that is identical, both remain usable and round-trip through their own text in every case they are written in.
+func TestEraCaseIsSignificantToNeither(t *testing.T) {
+	c := check.New(t)
+	cfg := calendar.Gregorian().Config()
+	cfg.Era, cfg.PreviousEra = "ad", "AD"
+	c.HasError(cfg.Valid())
+	cal, err := calendar.New(cfg)
+	c.HasError(err)
+	c.True(cal == nil)
+
+	for _, eras := range [][2]string{{"AD", "BC"}, {"ad", "bc"}, {"AR", "AR"}} {
+		cfg.Era, cfg.PreviousEra = eras[0], eras[1]
+		cal, err = calendar.New(cfg)
+		c.NoError(err, "eras %q/%q", eras[0], eras[1])
+		for _, year := range []int{2017, -2017} {
+			want := cal.MustNewDate(1, 5, year)
+			formatted := want.Format("%N/%D/%y")
+			for _, text := range []string{formatted, strings.ToUpper(formatted), strings.ToLower(formatted)} {
+				var got calendar.Date
+				got, err = cal.ParseDate(text)
+				c.NoError(err, "eras %q/%q: %q", eras[0], eras[1], text)
+				c.True(want.Equal(got), "eras %q/%q: %q parsed back as %s", eras[0], eras[1], text, got)
+			}
+		}
+	}
+}
+
 func TestMinDaysPerYearMatchesMonthSum(t *testing.T) {
 	c := check.New(t)
 	// MinDaysPerYear is summed once when the Calendar is built and cached (it is a pure function of the immutable

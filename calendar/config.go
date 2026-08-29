@@ -42,7 +42,7 @@ const (
 var (
 	absalom   = newPathfinderCalendar("AR")
 	imperial  = newPathfinderCalendar("IC")
-	gregorian = newCalendar(&Config{
+	gregorian = mustNewCalendar(&Config{
 		DayZeroWeekDay: 1,
 		WeekDays:       []string{"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"},
 		Months: []Month{
@@ -245,6 +245,11 @@ func (c *Config) Valid() error {
 	if (c.PreviousEra == "") != (c.Era == "") {
 		return errs.New("era and previous era must either both be set or neither set")
 	}
+	// ParseDate matches an era suffix without regard to case, so two labels that differ only in case cannot be told
+	// apart there, even though they read as distinct when formatting (see Config.distinctEras).
+	if c.Era != c.PreviousEra && strings.EqualFold(c.Era, c.PreviousEra) {
+		return errs.New("era and previous era may not differ only in letter case")
+	}
 	return nil
 }
 
@@ -283,7 +288,7 @@ func PathfinderImperialCalendar() *Calendar {
 // era name (the same name serves as both the current and previous era). Each call returns an independent Calendar built
 // from fresh component slices.
 func newPathfinderCalendar(era string) *Calendar {
-	return newCalendar(&Config{
+	return mustNewCalendar(&Config{
 		WeekDays: []string{
 			"Moonday",
 			"Toilday",

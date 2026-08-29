@@ -49,6 +49,56 @@ func TestDateSeason(t *testing.T) {
 	assertSeason(3, 1, 2016, "Spring")
 }
 
+// TestDateSeasonEndOfMonthExtension pins how a season ending on the last day of the leap month gains the leap day. The
+// extension must not change whether the season wraps the year: with a single 30-day leap month, a season from 1/31
+// (the leap day) through 1/30 wraps as configured and so covers every day of every year, but Season once extended the
+// end to 1/31 before deciding, read the season as the one-day contiguous span 1/31-1/31, and left every other day of
+// the year in no season at all.
+func TestDateSeasonEndOfMonthExtension(t *testing.T) {
+	c := check.New(t)
+	cal, err := calendar.New(&calendar.Config{
+		WeekDays: []string{"A"},
+		Months:   []calendar.Month{{Name: "M", Days: 30}},
+		LeapYear: &calendar.LeapYear{Month: 1, Every: 2},
+		Seasons:  []calendar.Season{{Name: "Whole Year", StartMonth: 1, StartDay: 31, EndMonth: 1, EndDay: 30}},
+	})
+	c.NoError(err)
+	c.Equal(30, cal.Days(1))
+	c.Equal(31, cal.Days(2))
+	for _, year := range []int{1, 2} {
+		for day := 1; day <= cal.Days(year); day++ {
+			s, ok := cal.MustNewDate(1, day, year).Season()
+			c.True(ok, "1/%d/%d", day, year)
+			c.Equal("Whole Year", s.Name, "1/%d/%d", day, year)
+		}
+	}
+
+	// A contiguous season ending on the last day of the leap month still runs through the leap day, and one ending on
+	// the leap day itself covers only that day, which exists only in a leap year.
+	greg := calendar.Gregorian().Config()
+	greg.Seasons = []calendar.Season{
+		{Name: "Early", StartMonth: 1, StartDay: 1, EndMonth: 2, EndDay: 28},
+		{Name: "LeapDay", StartMonth: 2, StartDay: 29, EndMonth: 2, EndDay: 29},
+	}
+	cal, err = calendar.New(greg)
+	c.NoError(err)
+	s, ok := cal.MustNewDate(2, 29, 2016).Season()
+	c.True(ok)
+	c.Equal("Early", s.Name)
+	_, ok = cal.MustNewDate(3, 1, 2016).Season()
+	c.False(ok)
+	greg.Seasons = greg.Seasons[1:]
+	cal, err = calendar.New(greg)
+	c.NoError(err)
+	s, ok = cal.MustNewDate(2, 29, 2016).Season()
+	c.True(ok)
+	c.Equal("LeapDay", s.Name)
+	_, ok = cal.MustNewDate(2, 28, 2016).Season()
+	c.False(ok)
+	_, ok = cal.MustNewDate(2, 28, 2017).Season()
+	c.False(ok)
+}
+
 func TestDateSeasonGapsAndOverlap(t *testing.T) {
 	c := check.New(t)
 	weekDays := []string{"A", "B", "C", "D", "E", "F", "G"}
@@ -209,11 +259,99 @@ func TestYearRangeEnforced(t *testing.T) {
 			year := int(beyond)
 			c.False(calendar.IsValidYear(year), "IsValidYear(%d)", year)
 			c.False(cal.IsLeapYear(year), "IsLeapYear(%d)", year) // 2^31 satisfies the leap rule but is out of range
+			c.Equal(0, cal.Days(year), "Days(%d)", year)          // and Days must agree that no such year exists
 			_, err := cal.NewDate(1, 1, year)
 			c.HasError(err, "NewDate year %d", year)
 			var buf bytes.Buffer
 			c.HasError(cal.Text(year, &buf), "Text year %d", year)
 			c.Equal(0, buf.Len(), "nothing may be written for year %d", year)
+		}
+	}
+}
+
+// TestSetDefaultRejectsUnusableCalendar pins that SetDefault reports, rather than silently ignores, a calendar that
+// could not serve as the fallback for a zero-value Date: nil, or a zero-value Calendar that no constructor produced.
+// The default must be left untouched in either case.
+func TestSetDefaultRejectsUnusableCalendar(t *testing.T) {
+	c := check.New(t)
+	saved := calendar.Default()
+	defer func() { c.NoError(calendar.SetDefault(saved)) }()
+	c.HasError(calendar.SetDefault(nil))
+	c.True(calendar.Default() == saved)
+	c.HasError(calendar.SetDefault(&calendar.Calendar{}))
+	c.True(calendar.Default() == saved)
+	other := calendar.PathfinderImperialCalendar()
+	c.NoError(calendar.SetDefault(other))
+	c.True(calendar.Default() == other)
+}
+
+// TestNilAndZeroCalendarFallBackToDefault pins that every Calendar method tolerates a nil receiver and a zero-value
+// Calendar alike, answering as the default calendar would, so a Date built through either still resolves.
+func TestNilAndZeroCalendarFallBackToDefault(t *testing.T) {
+	c := check.New(t)
+	def := calendar.Default()
+	want := def.MustNewDate(9, 22, 2017)
+	for i, cal := range []*calendar.Calendar{nil, {}} {
+		c.NotPanics(func() {
+			c.Equal(def.Config(), cal.Config(), "index %d", i)
+			c.Equal(def.MinDaysPerYear(), cal.MinDaysPerYear(), "index %d", i)
+			c.Equal(def.Days(2016), cal.Days(2016), "index %d", i)
+			c.True(cal.IsLeapYear(2016), "index %d", i)
+			c.True(cal.IsLeapMonth(2), "index %d", i)
+			got, err := cal.ParseDate("September 22, 2017")
+			c.NoError(err, "index %d", i)
+			c.True(want.Equal(got), "index %d", i)
+			got, err = cal.NewDate(9, 22, 2017)
+			c.NoError(err, "index %d", i)
+			c.True(want.Equal(got), "index %d", i)
+			c.True(want.Equal(cal.MustNewDate(9, 22, 2017)), "index %d", i)
+			c.True(want.Equal(cal.NewDateByDays(want.Days())), "index %d", i)
+			_, err = cal.NewDate(13, 1, 2017)
+			c.HasError(err, "index %d", i)
+			var buf bytes.Buffer
+			c.NoError(cal.Text(2017, &buf), "index %d", i)
+			c.True(strings.HasPrefix(buf.String(), "Year 2017\n"), "index %d", i)
+		}, "index %d", i)
+	}
+}
+
+// TestMustNewDatePanicsOnInvalidDate pins the documented panic, which is the only way MustNewDate reports a bad date.
+func TestMustNewDatePanicsOnInvalidDate(t *testing.T) {
+	c := check.New(t)
+	cal := calendar.Gregorian()
+	c.Panics(func() { cal.MustNewDate(13, 1, 2017) })
+	c.Panics(func() { cal.MustNewDate(2, 29, 2017) })
+	c.Panics(func() { cal.MustNewDate(1, 1, 0) })
+	c.NotPanics(func() { cal.MustNewDate(2, 29, 2016) })
+}
+
+// TestParseDateRejectsOverflowingNumbers pins the error paths for a month, day or year whose digits do not fit an
+// integer. The patterns accept any run of digits, so the conversion is where such text must be turned into an error
+// rather than a wrapped or truncated value.
+func TestParseDateRejectsOverflowingNumbers(t *testing.T) {
+	c := check.New(t)
+	cal := calendar.Gregorian()
+	const huge = "99999999999999999999999" // 23 digits: past the range of an int64, and so of an int on any target
+	const (
+		badMonth = "invalid month text"
+		badDay   = "invalid day text"
+		badYear  = "invalid year text"
+	)
+	for _, tc := range []struct {
+		text string
+		want string // the error must name the field at fault
+	}{
+		{huge + "/22/2017", badMonth},
+		{"9/" + huge + "/2017", badDay},
+		{"9/22/" + huge, badYear},
+		{"9/22/-" + huge, badYear},
+		{"September " + huge + ", 2017", badDay},
+		{"September 22, " + huge, badYear},
+	} {
+		_, err := cal.ParseDate(tc.text)
+		c.HasError(err, "%s", tc.text)
+		if err != nil {
+			c.Contains(err.Error(), tc.want, "%s", tc.text)
 		}
 	}
 }
@@ -263,6 +401,10 @@ func TestDays(t *testing.T) {
 	c.Equal(366, greg.Days(-1))
 	c.Equal(365, greg.Days(-2))
 	c.Equal(366, greg.Days(-5))
+	// There is no year 0, so it has no days; IsLeapYear reports false for it for the same reason. Days once skipped the
+	// range check IsLeapYear performs and reported 365 here (and 366 for year 2^31 on a 64-bit target).
+	c.Equal(0, greg.Days(0))
+	c.False(greg.IsLeapYear(0))
 
 	// Days must agree with the distance between consecutive first-of-year dates, since that is what the date math
 	// derives from the same leap rule, right out to the first and last years a Date can occupy.

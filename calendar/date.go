@@ -184,19 +184,24 @@ func (date Date) Season() (Season, bool) {
 	cal := date.calendar()
 	cfg := cal.config()
 	for i := range cfg.Seasons {
-		endDay := cfg.Seasons[i].EndDay
-		if cfg.Seasons[i].EndMonth >= 1 && cfg.Seasons[i].EndMonth <= len(cfg.Months) &&
-			endDay == cfg.Months[cfg.Seasons[i].EndMonth-1].Days {
-			endDay = cal.maxDaysInMonth(cfg.Seasons[i].EndMonth)
+		s := &cfg.Seasons[i]
+		// Whether the span wraps the year boundary is decided from the season as configured. The end-of-month
+		// extension below is applied only afterwards: a season ending on the last day of the leap month and starting
+		// on the leap day itself (1/31 through 1/30 on a 30-day leap month) wraps as configured, but testing the
+		// extended end (1/31) against the start would instead read it as a one-day contiguous span.
+		wraps := !onOrAfter(s.EndMonth, s.EndDay, s.StartMonth, s.StartDay)
+		endDay := s.EndDay
+		if s.EndMonth >= 1 && s.EndMonth <= len(cfg.Months) && endDay == cfg.Months[s.EndMonth-1].Days {
+			endDay = cal.maxDaysInMonth(s.EndMonth)
 		}
-		afterStart := onOrAfter(month, dayInMonth, cfg.Seasons[i].StartMonth, cfg.Seasons[i].StartDay)
-		beforeEnd := onOrAfter(cfg.Seasons[i].EndMonth, endDay, month, dayInMonth)
-		if onOrAfter(cfg.Seasons[i].EndMonth, endDay, cfg.Seasons[i].StartMonth, cfg.Seasons[i].StartDay) {
-			if afterStart && beforeEnd { // start on or before end: a single contiguous span
-				return cfg.Seasons[i], true
+		afterStart := onOrAfter(month, dayInMonth, s.StartMonth, s.StartDay)
+		beforeEnd := onOrAfter(s.EndMonth, endDay, month, dayInMonth)
+		if wraps {
+			if afterStart || beforeEnd { // start after end: the span wraps the year boundary
+				return *s, true
 			}
-		} else if afterStart || beforeEnd { // start after end: the span wraps the year boundary
-			return cfg.Seasons[i], true
+		} else if afterStart && beforeEnd { // start on or before end: a single contiguous span
+			return *s, true
 		}
 	}
 	return Season{}, false
@@ -254,10 +259,12 @@ func (date Date) Format(layout string) string {
 //	%n  Month padded with zeroes, e.g. '09'
 //	%D  Day, e.g. '2'
 //	%d  Day padded with zeroes, e.g. '02'
-//	%Y  Year, e.g. '2017' if positive, '2017 BC' if negative; however, if the eras aren't empty and match each other,
-//	    then this will behave the same as %y
-//	%y  Year with era, e.g. '2017 AD'; however, if the eras are empty or they match each other, then negative years
-//	    will result in '-2017 AD'
+//	%Y  Year, labeled only when the label carries the sign: with distinct eras (such as 'AD' and 'BC'), '2017' for a
+//	    year in the current era and '2017 BC' for one in the previous era; when the eras match each other, this
+//	    behaves the same as %y; when the eras are empty, the same as %z
+//	%y  Year with era, e.g. '2017 AD' or '2017 BC'; when the eras match each other the label cannot carry the sign,
+//	    so it stays on the year and a negative year results in '-2017 AR'; when the eras are empty there is no label
+//	    to emit and the result is the same as %z, e.g. '-2017'
 //	%z  Year without the era, e.g. '2017' or '-2017'
 //	%%  %
 func (date Date) WriteFormat(w io.Writer, layout string) {
@@ -302,7 +309,7 @@ func (date Date) WriteFormat(w io.Writer, layout string) {
 			case 'Y':
 				resolve()
 				displayYear, era := cal.eraForYear(year)
-				if era != "" && era == cfg.PreviousEra {
+				if era != "" && (year < 0 || !cfg.distinctEras()) {
 					fmt.Fprintf(w, "%d %s", displayYear, era)
 				} else {
 					fmt.Fprint(w, displayYear)

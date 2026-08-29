@@ -841,12 +841,42 @@ func TestUnmarshaling(t *testing.T) {
 
 	cal = calendar.PathfinderAbsalomReckoning()
 	savedDefault := calendar.Default()
-	defer func() { calendar.SetDefault(savedDefault) }()
-	calendar.SetDefault(cal)
+	defer func() { c.NoError(calendar.SetDefault(savedDefault)) }()
+	c.NoError(calendar.SetDefault(cal))
 	date = calendar.Date{}
 	target = cal.MustNewDate(9, 22, 2017)
 	c.NoError(date.UnmarshalText([]byte("9/22/2017 AR")))
 	c.Equal(target, date)
+}
+
+// TestUnmarshalTextRejectsInvalidDate pins UnmarshalText's error return, the only path by which a JSON or YAML decode
+// surfaces a bad date. Text that is not a date at all, and text that is a date on no calendar, must both fail, and a
+// failed unmarshal must leave the Date as it was.
+func TestUnmarshalTextRejectsInvalidDate(t *testing.T) {
+	c := check.New(t)
+	want := calendar.Gregorian().MustNewDate(9, 22, 2017)
+	for _, text := range []string{"total nonsense", "", "13/1/2017", "2/29/2017", "9/22/0", "9/22/-5 AD"} {
+		date := want
+		c.HasError(date.UnmarshalText([]byte(text)), "%q", text)
+		c.True(want.Equal(date), "%q: a failed unmarshal must leave the date untouched", text)
+	}
+
+	type embedded struct {
+		Date calendar.Date
+	}
+	var embeddedDate embedded
+	c.HasError(json.Unmarshal([]byte(`{"Date":"total nonsense"}`), &embeddedDate))
+	c.HasError(json.Unmarshal([]byte(`{"Date":"13/1/2017"}`), &embeddedDate))
+	c.HasError(yaml.Unmarshal([]byte(`date: total nonsense`), &embeddedDate))
+	c.HasError(yaml.Unmarshal([]byte(`date: 13/1/2017`), &embeddedDate))
+	c.True(calendar.Date{}.Equal(embeddedDate.Date), "a failed decode must leave the field at its zero value")
+
+	type embeddedPtr struct {
+		Date *calendar.Date
+	}
+	var embeddedPtrDate embeddedPtr
+	c.HasError(json.Unmarshal([]byte(`{"Date":"total nonsense"}`), &embeddedPtrDate))
+	c.HasError(yaml.Unmarshal([]byte(`date: total nonsense`), &embeddedPtrDate))
 }
 
 // TestAddSaturates exercises Date.Add's documented saturation contract directly, in both directions. A Date is

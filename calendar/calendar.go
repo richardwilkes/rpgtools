@@ -11,10 +11,12 @@
 package calendar
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"math"
 	"regexp"
+	"regexp/syntax"
 	"slices"
 	"strconv"
 	"strings"
@@ -53,20 +55,26 @@ type Calendar struct {
 	lastDay        int64          // Days of the latest Date the calendar can represent; see Date.Add
 }
 
-// New creates a new Calendar from the given Config.
+// New creates a new Calendar from the given Config. An error is returned if the Config is not Valid, or if its month
+// and era names are so long that the ParseDate patterns built from them exceed the size a regular expression may have.
 func New(cfg *Config) (*Calendar, error) {
 	if err := cfg.Valid(); err != nil {
 		return nil, err
 	}
-	return newCalendar(cfg.Clone()), nil
+	return newCalendar(cfg.Clone())
 }
 
 // newCalendar wraps an already-validated (or built-in) Config, precomputing minDaysPerYear so Year and the date
 // accessors that lean on it do not re-sum every month on each call, the span of days a Date on the calendar may occupy,
 // and the ParseDate patterns that depend on the Config's month and era names. The cfg is taken as-is and not cloned
-// again; callers pass a Config they own (New clones first, the built-ins pass a fresh literal).
-func newCalendar(cfg *Config) *Calendar {
-	c := &Calendar{cfg: cfg}
+// again; callers pass a Config they own (New clones first, the built-ins pass a fresh literal). Valid does not bound
+// the length of a name, so building the patterns is the one step that can still fail for a Config it accepts.
+func newCalendar(cfg *Config) (*Calendar, error) {
+	numeric, named, err := cfg.dateRegexes()
+	if err != nil {
+		return nil, err
+	}
+	c := &Calendar{cfg: cfg, numericDate: numeric, namedDate: named}
 	for i := range cfg.Months {
 		c.minDaysPerYear += cfg.Months[i].Days
 	}
@@ -74,7 +82,16 @@ func newCalendar(cfg *Config) *Calendar {
 	// target; maxDaysPerYear keeps that whole span within an int64 on every calendar.
 	c.firstDay = c.yearToDays(math.MinInt32)
 	c.lastDay = c.yearToDays(math.MaxInt32) + int64(c.Days(math.MaxInt32)) - 1
-	c.numericDate, c.namedDate = cfg.dateRegexes()
+	return c, nil
+}
+
+// mustNewCalendar builds one of the package's built-in calendars. Their Configs are literals known to be valid and
+// small, so a failure is a programming error rather than a condition to report.
+func mustNewCalendar(cfg *Config) *Calendar {
+	c, err := newCalendar(cfg)
+	if err != nil {
+		panic(err) // @allow
+	}
 	return c
 }
 
@@ -87,8 +104,9 @@ func newCalendar(cfg *Config) *Calendar {
 // must be followed by the end of the text or a non-alphanumeric character so a label cannot match the start of a longer
 // word ("BC" inside "BCE"); when the Config names no era the group is present but can never match, so the parts a match
 // yields always have the same shape. Alternatives are ordered longest first so a name that is a prefix of another is
-// never preferred over the longer match.
-func (c *Config) dateRegexes() (numeric, named *regexp.Regexp) {
+// never preferred over the longer match. Compilation fails only when the names are so long that a pattern exceeds the
+// size a regular expression may have (see compileDatePattern).
+func (c *Config) dateRegexes() (numeric, named *regexp.Regexp, err error) {
 	months := make([]string, 0, len(c.Months)*2)
 	for i := range c.Months {
 		months = append(months, c.Months[i].Name, xstrings.FirstN(c.Months[i].Name, abbreviatedNameLength))
@@ -97,9 +115,30 @@ func (c *Config) dateRegexes() (numeric, named *regexp.Regexp) {
 	if eras := alternation(c.Era, c.PreviousEra); eras != "" {
 		era = "(?: *(" + eras + ")(?:$|[^\\pL\\pN]))?"
 	}
-	numeric = regexp.MustCompile("(?i)([[:digit:]]+)/([[:digit:]]+)/(-?[[:digit:]]+)" + era)
-	named = regexp.MustCompile("(?i)(" + alternation(months...) + ") *([[:digit:]]+), *(-?[[:digit:]]+)" + era)
-	return numeric, named
+	if numeric, err = compileDatePattern("(?i)([[:digit:]]+)/([[:digit:]]+)/(-?[[:digit:]]+)" + era); err != nil {
+		return nil, nil, err
+	}
+	if named, err = compileDatePattern("(?i)(" + alternation(months...) + ") *([[:digit:]]+), *(-?[[:digit:]]+)" +
+		era); err != nil {
+		return nil, nil, err
+	}
+	return numeric, named, nil
+}
+
+// compileDatePattern compiles one ParseDate pattern, returning an error rather than panicking when it cannot. Every
+// name in a pattern is quoted literally and the pattern has no nesting, so the only way compilation can fail is by
+// exceeding the size a regular expression may have, which Config.Valid does not guard against since it places no bound
+// on the length of a name. A syntax.Error embeds the entire expression in its text, and for this failure that is
+// exactly what is too large to be worth reporting, so only the reason is kept.
+func compileDatePattern(expr string) (*regexp.Regexp, error) {
+	re, err := regexp.Compile(expr)
+	if err == nil {
+		return re, nil
+	}
+	if syntaxErr, ok := errors.AsType[*syntax.Error](err); ok {
+		return nil, errs.Newf("month and era names are too long to build a date parser from: %s", syntaxErr.Code)
+	}
+	return nil, errs.NewWithCause("unable to build a date parser from the month and era names", err)
 }
 
 // alternation joins the distinct, non-empty names into a regular expression alternation of literal matches, longest
@@ -123,13 +162,17 @@ func Default() *Calendar {
 	return defaultCalendar
 }
 
-// SetDefault sets the default Calendar to use.
-func SetDefault(cal *Calendar) {
-	if cal != nil && cal.cfg != nil {
-		defaultCalendarLock.Lock()
-		defaultCalendar = cal
-		defaultCalendarLock.Unlock()
+// SetDefault sets the default Calendar to use. An error is returned, and the default left unchanged, if cal is nil or a
+// zero-value Calendar rather than one obtained from New or one of the built-in constructors, since such a Calendar
+// could not serve as the fallback for a zero-value Date.
+func SetDefault(cal *Calendar) error {
+	if cal == nil || cal.cfg == nil {
+		return errs.New("calendar must be obtained from New or one of the built-in constructors")
 	}
+	defaultCalendarLock.Lock()
+	defaultCalendar = cal
+	defaultCalendarLock.Unlock()
+	return nil
 }
 
 // Config returns a clone of this Calendar's Config.
@@ -305,10 +348,20 @@ func (c *Calendar) eraForYear(year int) (displayYear int64, era string) {
 		era = cfg.PreviousEra
 	}
 	displayYear = int64(year)
-	if year < 0 && era != "" && cfg.Era != cfg.PreviousEra {
+	if year < 0 && era != "" && cfg.distinctEras() {
 		displayYear = -displayYear
 	}
 	return displayYear, era
+}
+
+// distinctEras reports whether the calendar labels its two eras differently, so that the label can carry the sign of a
+// year (see eraForYear). The labels are compared without regard to case because that is how ParseDate matches an era
+// suffix: two labels that differ only in case read as distinct when formatting but cannot be told apart when parsing,
+// so a formatted previous-era year would parse back into the current era. Valid rejects such a pair, so for any Config
+// it accepts this agrees with a plain comparison, and this single definition keeps every user of the era model -- the
+// format directives, Date.Era and resolveEraSuffix -- on the same side of that line.
+func (c *Config) distinctEras() bool {
+	return !strings.EqualFold(c.Era, c.PreviousEra)
 }
 
 // resolveEraSuffix folds a recognized era suffix into the sign of a parsed year, the parse-side inverse of eraForYear.
@@ -321,7 +374,7 @@ func (c *Calendar) eraForYear(year int) (displayYear int64, era string) {
 // negated into math.MinInt32 before parseDate narrows it.
 func (c *Calendar) resolveEraSuffix(year int64, yearText, eraText string) (int64, error) {
 	cfg := c.config()
-	distinctEras := cfg.Era != cfg.PreviousEra
+	distinctEras := cfg.distinctEras()
 	previousEraSuffix := eraText != "" && distinctEras && strings.EqualFold(cfg.PreviousEra, eraText)
 	currentEraSuffix := eraText != "" && distinctEras && strings.EqualFold(cfg.Era, eraText)
 	switch {
@@ -374,9 +427,13 @@ func (c *Calendar) mostDaysInMonth() int {
 	return most
 }
 
-// Days returns the number of days contained in a specific year. The length follows the leap-year rule exactly as the
-// internal date math treats it, so the result always agrees with the distance between consecutive first-of-year dates.
+// Days returns the number of days contained in a specific year, or 0 for a year IsValidYear rejects, since no such year
+// exists (IsLeapYear likewise reports false for it). The length follows the leap-year rule exactly as the internal date
+// math treats it, so the result always agrees with the distance between consecutive first-of-year dates.
 func (c *Calendar) Days(year int) int {
+	if !IsValidYear(year) {
+		return 0
+	}
 	days := c.MinDaysPerYear()
 	if c.isLeapYear(int64(year)) {
 		days++
@@ -424,11 +481,9 @@ func (c *Calendar) IsLeapMonth(month int) bool {
 
 // leapYearsSince returns the number of leap years that have occurred between year 1 and the specified year, exclusive.
 // It counts the true leap years for any int64 year, including those outside the int32 range, because Date.Year's
-// search probes years beyond it (see isLeapYear).
+// search probes years beyond it (see isLeapYear). The calendar must have a leap rule: yearToDaysWith, the only caller,
+// checks that before calling, and countLeaps relies on it.
 func (c *Calendar) leapYearsSince(year int64) int64 {
-	if c.config().LeapYear == nil {
-		return 0
-	}
 	if year >= 1 {
 		return c.countLeaps(year - 1)
 	}
